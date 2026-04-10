@@ -21,6 +21,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 const ghl = require('../utils/ghl-api');
 const { onboardNewClients } = require('../engine/onboard-client');
 const clickup = require('../utils/clickup-api');
+const dashboardRoutes = require('./dashboard-routes');
 
 const app = express();
 const PORT = process.env.PORT || process.env.FORM_PORT || 3000;
@@ -206,6 +207,9 @@ app.post('/api/admin/onboard', async (req, res) => {
     res.status(500).json({ error: 'Onboarding failed: ' + err.message });
   }
 });
+
+// ─── Dashboard API ───
+app.use('/api/dashboard', dashboardRoutes);
 
 // ─── Health check ───
 app.get('/api/health', (req, res) => {

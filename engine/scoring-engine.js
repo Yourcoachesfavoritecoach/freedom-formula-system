@@ -855,6 +855,30 @@ async function run() {
   fs.writeFileSync(resultsPath, JSON.stringify(resultsData, null, 2));
   console.log(`Results saved to ${resultsPath}`);
 
+  // Append to score history for dashboard charts
+  const historyPath = path.resolve(__dirname, '../setup/score-history.json');
+  try {
+    const weekLabel = new Date().toISOString().split('T')[0];
+    let history = [];
+    if (fs.existsSync(historyPath)) {
+      history = JSON.parse(fs.readFileSync(historyPath, 'utf8'));
+    }
+    // Idempotent: replace if same week already exists
+    const existingIdx = history.findIndex(h => h.week === weekLabel);
+    const snapshot = { week: weekLabel, scores: resultsData };
+    if (existingIdx >= 0) {
+      history[existingIdx] = snapshot;
+    } else {
+      history.push(snapshot);
+    }
+    // Keep last 52 weeks
+    if (history.length > 52) history = history.slice(-52);
+    fs.writeFileSync(historyPath, JSON.stringify(history, null, 2));
+    console.log(`Score history updated (${history.length} weeks)`);
+  } catch (histErr) {
+    console.error('Warning: Could not update score history -', histErr.message);
+  }
+
   return results;
 }
 

@@ -25,7 +25,7 @@
     "program_values": "Freedom Formula or Black Circle",
     "google_ads_format": "No dashes. Example: 1234567890",
     "meta_format": "Include act_ prefix. Example: act_1234567890",
-    "adding_new_clients": "Copy an entry, fill in all 7 fields, save. Engine picks it up on next run.",
+    "adding_new_clients": "Add name, program, ghl_location_id, ghl_api_key, ff_contact_id, and ad IDs. Leave coaching_dept_mirror_contact_id empty. The scoring engine auto-creates the mirror contact, pipeline opportunity, tags, and initial field values on next run.",
     "ghl_api_key": "Each client sub-account needs its own Private Integration Token with all scopes enabled."
   }
 }

@@ -2,10 +2,12 @@
  * Check-In Form API Server
  * Receives weekly check-in form submissions and writes them to GHL.
  * Also serves the check-in form HTML.
+ * Handles GHL webhook for automatic client onboarding.
  *
  * Endpoints:
- *   GET  /                → Serves the check-in form
- *   POST /api/check-in    → Receives form data, writes note to GHL contact
+ *   GET  /                        → Serves the check-in form
+ *   POST /api/check-in            → Receives form data, writes note to GHL contact
+ *   POST /api/webhook/onboard     → GHL webhook: auto-onboard when client hits Payment Received
  */
 
 const express = require('express');
@@ -14,6 +16,7 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const ghl = require('../utils/ghl-api');
+const { onboardNewClients } = require('../engine/onboard-client');
 
 const app = express();
 const PORT = process.env.FORM_PORT || 3000;
@@ -91,6 +94,25 @@ app.post('/api/check-in', async (req, res) => {
   } catch (err) {
     console.error('Check-in submission failed:', err.message);
     res.status(500).json({ error: 'Failed to save check-in. Please try again.' });
+  }
+});
+
+// ─── GHL Webhook: Auto-onboard new clients ───
+// Set this URL as a webhook in GHL for pipeline stage changes.
+// When a contact moves to "Payment Received", this triggers onboarding
+// for any clients in the registry that don't have a mirror contact yet.
+app.post('/api/webhook/onboard', async (req, res) => {
+  try {
+    console.log(`Webhook received: onboard trigger - ${new Date().toISOString()}`);
+
+    // Reload registry and onboard anyone missing a mirror contact
+    loadRegistry();
+    await onboardNewClients();
+
+    res.json({ success: true, message: 'Onboarding check complete.' });
+  } catch (err) {
+    console.error('Webhook onboard failed:', err.message);
+    res.status(500).json({ error: 'Onboarding failed.' });
   }
 });
 

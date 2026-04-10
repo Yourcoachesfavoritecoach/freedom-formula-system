@@ -8,6 +8,7 @@
  */
 
 const ghl = require('../utils/ghl-api');
+const { ALL_FIELDS: CUSTOM_FIELDS } = require('../utils/field-definitions');
 require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
 
 // Accept a location ID as command line argument, or default to Coaching Dept
@@ -18,79 +19,6 @@ const API_KEY = process.argv[3] || null;
 if (API_KEY && LOCATION_ID) {
   ghl.registerLocationKey(LOCATION_ID, API_KEY);
 }
-
-const CUSTOM_FIELDS = [
-  // ─── Baseline / Tier ───
-  { name: 'FF Monthly Revenue Baseline', dataType: 'NUMERICAL', position: 0 },
-  { name: 'FF Revenue Tier', dataType: 'TEXT', position: 1 },
-
-  // ─── Weekly KPI Fields ───
-  { name: 'FF Weekly Revenue', dataType: 'NUMERICAL', position: 2 },
-  { name: 'FF Weekly Leads', dataType: 'NUMERICAL', position: 3 },
-  { name: 'FF Weekly New Members', dataType: 'NUMERICAL', position: 4 },
-  { name: 'FF Weekly Cancellations', dataType: 'NUMERICAL', position: 5 },
-  { name: 'FF Active Member Count', dataType: 'NUMERICAL', position: 6 },
-
-  // ─── Hours Reclaimed ───
-  { name: 'FF Hours Reclaimed This Week', dataType: 'NUMERICAL', position: 7 },
-  { name: 'FF Hours Reclaimed Running Total', dataType: 'NUMERICAL', position: 8 },
-
-  // ─── Blended CPL ───
-  { name: 'FF Blended CPL This Week', dataType: 'NUMERICAL', position: 9 },
-  { name: 'FF Blended CPL 4-Week Avg', dataType: 'NUMERICAL', position: 10 },
-
-  // ─── Conversion Rate ───
-  { name: 'FF Conversion Rate This Week', dataType: 'NUMERICAL', position: 11 },
-  { name: 'FF Conversion Rate 4-Week Avg', dataType: 'NUMERICAL', position: 12 },
-
-  // ─── Revenue Rolling ───
-  { name: 'FF Revenue 4-Week Avg', dataType: 'NUMERICAL', position: 13 },
-
-  // ─── Lead Volume Rolling ───
-  { name: 'FF Lead Volume 4-Week Avg', dataType: 'NUMERICAL', position: 14 },
-
-  // ─── Health Score ───
-  { name: 'FF Health Score This Week', dataType: 'NUMERICAL', position: 15 },
-  { name: 'FF Health Score Last Week', dataType: 'NUMERICAL', position: 16 },
-  { name: 'FF Score Status', dataType: 'TEXT', position: 17 },
-
-  // ─── Cycle Tracking ───
-  { name: 'FF Cycle Start Date', dataType: 'DATE', position: 18 },
-  { name: 'FF Current Cycle Number', dataType: 'NUMERICAL', position: 19 },
-
-  // ─── Form Responses ───
-  { name: 'FF Org Chart Status', dataType: 'TEXT', position: 20 },
-  { name: 'FF Operational Control Rating', dataType: 'NUMERICAL', position: 29 },
-  { name: 'FF Coaching Directive Status', dataType: 'TEXT', position: 21 },
-
-  // ─── Override ───
-  { name: 'FF Score Override Note', dataType: 'TEXT', position: 22 },
-
-  // ─── Self Rating ───
-  { name: 'FF Weekly Self Rating', dataType: 'NUMERICAL', position: 23 },
-
-  // ─── Danger Zone ───
-  { name: 'FF Danger Zone Active', dataType: 'TEXT', position: 24 },
-  { name: 'FF Consecutive Missed Forms', dataType: 'NUMERICAL', position: 25 },
-  { name: 'FF Consecutive Missed Calls', dataType: 'NUMERICAL', position: 26 },
-
-  // ─── Milestone ───
-  { name: 'FF Days Until Next Milestone', dataType: 'NUMERICAL', position: 27 },
-
-  // ─── Program ───
-  { name: 'FF Program', dataType: 'TEXT', position: 28 },
-
-  // ─── Black Circle Fields ───
-  { name: 'BC Strategic Initiative Status', dataType: 'TEXT', position: 30 },
-  { name: 'BC Team Development Rating', dataType: 'NUMERICAL', position: 31 },
-  { name: 'BC CEO Hours This Week', dataType: 'NUMERICAL', position: 32 },
-  { name: 'BC Weekly Revenue Target', dataType: 'NUMERICAL', position: 33 },
-  { name: 'BC Profit Margin This Week', dataType: 'NUMERICAL', position: 34 },
-  { name: 'BC Profit Margin 4-Week Avg', dataType: 'NUMERICAL', position: 35 },
-  { name: 'BC Member Retention Rate', dataType: 'NUMERICAL', position: 36 },
-  { name: 'BC Peer Contribution', dataType: 'TEXT', position: 37 },
-  { name: 'BC Weeks Under Revenue Target', dataType: 'NUMERICAL', position: 38 },
-];
 
 async function main() {
   console.log('Creating custom fields on The Coaching Dept. sub-account...');

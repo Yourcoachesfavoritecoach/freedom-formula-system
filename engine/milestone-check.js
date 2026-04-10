@@ -12,6 +12,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 const ghl = require('../utils/ghl-api');
 const { getScoreStatus } = require('../utils/score-calculator');
 const { getCustomFieldValue } = require('../utils/rolling-averages');
+const { onboardNewClients } = require('./onboard-client');
 
 const COACHING_DEPT_ID = process.env.COACHING_DEPT_LOCATION_ID;
 
@@ -445,6 +446,9 @@ async function handle90Day(client, fieldDefs, cdFieldDefs) {
 async function run() {
   console.log('=== Daily Milestone Check ===');
   console.log(`Run time: ${new Date().toISOString()}`);
+
+  // Auto-onboard any new clients added to registry
+  await onboardNewClients();
 
   const clients = loadRegistry();
   console.log(`Checking ${clients.length} Freedom Formula clients`);

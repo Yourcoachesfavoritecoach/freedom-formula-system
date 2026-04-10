@@ -14,9 +14,50 @@ const metaAds = require('../utils/meta-ads-api');
 const { calculateScore, getScoreStatus } = require('../utils/score-calculator');
 const { calculateBCScore, getBCScoreStatus } = require('../utils/bc-score-calculator');
 const { updateAllRollingAverages, getCustomFieldValue } = require('../utils/rolling-averages');
+const { ALL_FIELDS, FF_FIELDS, BC_FIELDS } = require('../utils/field-definitions');
+const { onboardNewClients } = require('./onboard-client');
 
 const COACHING_DEPT_ID = process.env.COACHING_DEPT_LOCATION_ID;
 const REENGAGEMENT_WORKFLOW_ID = process.env.GHL_REENGAGEMENT_WORKFLOW_ID;
+
+/**
+ * Auto-provision custom fields on a sub-account.
+ * Checks which fields exist and creates any missing ones.
+ * FF clients get FF fields. BC clients get all fields (FF + BC).
+ */
+async function provisionFields(locationId, program) {
+  const requiredFields = program === 'Black Circle' ? ALL_FIELDS : FF_FIELDS;
+
+  let existingFields = [];
+  try {
+    const existing = await ghl.getCustomFields(locationId);
+    existingFields = existing.customFields || [];
+  } catch (err) {
+    console.log(`  Warning: Could not fetch fields for provisioning - ${err.message}`);
+    return;
+  }
+
+  const existingNames = new Set(existingFields.map((f) => f.name));
+  const missing = requiredFields.filter((f) => !existingNames.has(f.name));
+
+  if (missing.length === 0) return;
+
+  console.log(`  Provisioning ${missing.length} missing custom fields...`);
+  for (const field of missing) {
+    try {
+      await ghl.createCustomField(locationId, {
+        name: field.name,
+        dataType: field.dataType,
+        position: field.position,
+        model: 'contact',
+      });
+      console.log(`    Created: ${field.name}`);
+      await new Promise((r) => setTimeout(r, 300));
+    } catch (err) {
+      console.log(`    Failed to create ${field.name}: ${err.message}`);
+    }
+  }
+}
 
 function loadRegistry() {
   const registryPath = path.resolve(__dirname, '../setup/client-registry.json');
@@ -718,6 +759,9 @@ async function run() {
   console.log('=== Freedom Formula Scoring Engine ===');
   console.log(`Run time: ${new Date().toISOString()}`);
 
+  // Auto-onboard any new clients (creates mirror contacts, pipeline, tags)
+  await onboardNewClients();
+
   const { ffClients, bcClients } = loadRegistry();
   console.log(`Processing ${ffClients.length} Freedom Formula clients`);
   console.log(`Processing ${bcClients.length} Black Circle clients`);
@@ -725,6 +769,20 @@ async function run() {
   if (ffClients.length === 0 && bcClients.length === 0) {
     console.log('No clients in registry. Exiting.');
     return;
+  }
+
+  // Auto-provision fields on any sub-accounts missing them
+  const allClients = [...ffClients, ...bcClients];
+  const provisionedLocations = new Set();
+  for (const client of allClients) {
+    const loc = client.ghl_location_id;
+    if (provisionedLocations.has(loc)) continue;
+    provisionedLocations.add(loc);
+    await provisionFields(loc, client.program);
+  }
+  // Also provision the Coaching Dept mirror account
+  if (!provisionedLocations.has(COACHING_DEPT_ID)) {
+    await provisionFields(COACHING_DEPT_ID, 'Black Circle');
   }
 
   const results = [];

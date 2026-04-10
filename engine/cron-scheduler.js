@@ -15,6 +15,9 @@ const scoringEngine = require('./scoring-engine');
 const mondayDelivery = require('./monday-delivery');
 const milestoneCheck = require('./milestone-check');
 
+// Start the API server alongside cron jobs (handles webhooks + form submissions)
+require('../api/server');
+
 console.log('=== Freedom Formula Cron Scheduler ===');
 console.log(`Started at: ${new Date().toISOString()}`);
 console.log('');
@@ -22,6 +25,7 @@ console.log('Scheduled jobs:');
 console.log('  Scoring Engine:  Every Sunday at 11:00pm');
 console.log('  Monday Delivery: Every Monday at 7:00am');
 console.log('  Milestone Check: Every day at 8:00am');
+console.log('  API Server:      Running on port ' + (process.env.FORM_PORT || 3000));
 console.log('');
 
 // Scoring Engine — Sunday 11:00pm

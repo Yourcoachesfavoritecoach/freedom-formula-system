@@ -82,6 +82,10 @@ async function updateContact(locationId, contactId, fields) {
   return apiRequest('PUT', `/contacts/${contactId}`, locationId, fields);
 }
 
+async function createContact(locationId, contactData) {
+  return apiRequest('POST', '/contacts/', locationId, { ...contactData, locationId });
+}
+
 async function searchContacts(locationId, query) {
   const params = { locationId, ...query };
   return apiRequest('GET', `/contacts/?${new URLSearchParams(params)}`, locationId);
@@ -220,6 +224,7 @@ async function writeFieldsToContact(locationId, contactId, fieldMap, fieldDefini
 
 module.exports = {
   getContact,
+  createContact,
   updateContact,
   searchContacts,
   addContactNote,

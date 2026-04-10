@@ -7,19 +7,23 @@
  * Endpoints:
  *   GET  /                        → Serves the check-in form
  *   POST /api/check-in            → Receives form data, writes note to GHL contact
- *   POST /api/webhook/onboard     → GHL webhook: auto-onboard when client hits Payment Received
+ *   POST /api/webhook/new-client   → GHL webhook: creates ClickUp task for Usman + runs onboarding
+ *   GET  /admin/onboard            → Usman's admin page to register new client sub-accounts
+ *   POST /api/admin/onboard        → Registers client in system + triggers instant onboarding
  */
 
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const ghl = require('../utils/ghl-api');
 const { onboardNewClients } = require('../engine/onboard-client');
+const clickup = require('../utils/clickup-api');
 
 const app = express();
-const PORT = process.env.FORM_PORT || 3000;
+const PORT = process.env.PORT || process.env.FORM_PORT || 3000;
 
 // Middleware
 app.use(cors());
@@ -97,22 +101,109 @@ app.post('/api/check-in', async (req, res) => {
   }
 });
 
-// ─── GHL Webhook: Auto-onboard new clients ───
-// Set this URL as a webhook in GHL for pipeline stage changes.
-// When a contact moves to "Payment Received", this triggers onboarding
-// for any clients in the registry that don't have a mirror contact yet.
-app.post('/api/webhook/onboard', async (req, res) => {
+// ─── GHL Webhook: New client signed ───
+// Add this URL to the GHL workflow that fires when agreement is signed.
+// Creates a ClickUp task for Usman with setup instructions.
+// Also runs onboarding for any clients already in the registry.
+app.post('/api/webhook/new-client', async (req, res) => {
   try {
-    console.log(`Webhook received: onboard trigger - ${new Date().toISOString()}`);
+    const { contact_name, first_name, last_name, email, program } = req.body;
+    const clientName = contact_name || `${first_name || ''} ${last_name || ''}`.trim() || 'New Client';
+    const clientProgram = program || 'Freedom Formula';
 
-    // Reload registry and onboard anyone missing a mirror contact
+    console.log(`Webhook: New client signed - ${clientName} (${clientProgram}) - ${new Date().toISOString()}`);
+
+    // Build the admin page URL for Usman
+    const host = req.get('host') || 'localhost:3000';
+    const protocol = req.get('x-forwarded-proto') || req.protocol;
+    const adminPageUrl = `${protocol}://${host}/admin/onboard`;
+
+    // Create ClickUp task for Usman with step-by-step instructions
+    await clickup.createOnboardingTask(clientName, clientProgram, adminPageUrl);
+
+    // Also run onboarding for any clients already in registry
     loadRegistry();
     await onboardNewClients();
 
-    res.json({ success: true, message: 'Onboarding check complete.' });
+    res.json({ success: true, message: `ClickUp task created for ${clientName}.` });
   } catch (err) {
-    console.error('Webhook onboard failed:', err.message);
-    res.status(500).json({ error: 'Onboarding failed.' });
+    console.error('Webhook new-client failed:', err.message);
+    res.status(500).json({ error: 'Webhook processing failed.' });
+  }
+});
+
+// ─── Serve admin onboarding page ───
+app.get('/admin/onboard', (req, res) => {
+  res.sendFile(path.resolve(__dirname, '../forms/admin-onboard.html'));
+});
+
+// ─── Handle admin onboarding submission ───
+app.post('/api/admin/onboard', async (req, res) => {
+  try {
+    // Token check
+    const adminToken = process.env.ADMIN_TOKEN;
+    if (adminToken) {
+      const authHeader = req.headers.authorization || '';
+      const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+      const queryToken = req.query.token || '';
+      if (bearerToken !== adminToken && queryToken !== adminToken) {
+        return res.status(401).json({ error: 'Unauthorized. Invalid admin token.' });
+      }
+    }
+
+    const { name, program, ghl_location_id, ghl_api_key, ff_contact_id, google_ads_customer_id, meta_ad_account_id } = req.body;
+
+    if (!name || !program || !ghl_location_id || !ghl_api_key || !ff_contact_id) {
+      return res.status(400).json({ error: 'Missing required fields.' });
+    }
+
+    // Load current registry
+    const registryPath = path.resolve(__dirname, '../setup/client-registry.json');
+    delete require.cache[require.resolve(registryPath)];
+    const registry = require(registryPath);
+
+    // Check for duplicate
+    const exists = registry.clients.some(c => c.ghl_location_id === ghl_location_id);
+    if (exists) {
+      return res.status(409).json({ error: 'Client with this location ID already exists.' });
+    }
+
+    // Add new client with empty mirror ID (onboarding will fill it)
+    const newClient = {
+      name,
+      program,
+      ghl_location_id,
+      ghl_api_key,
+      ff_contact_id,
+      google_ads_customer_id: google_ads_customer_id || '',
+      meta_ad_account_id: meta_ad_account_id || '',
+      coaching_dept_mirror_contact_id: '',
+    };
+
+    registry.clients.push(newClient);
+    fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2) + '\n');
+
+    // Register the API key and trigger immediate onboarding
+    ghl.registerLocationKey(ghl_location_id, ghl_api_key);
+    const { onboardNewClients: runOnboard } = require('../engine/onboard-client');
+    await runOnboard();
+
+    // Re-read registry to get the mirror contact ID
+    delete require.cache[require.resolve(registryPath)];
+    const updatedRegistry = require(registryPath);
+    const onboardedClient = updatedRegistry.clients.find(c => c.ghl_location_id === ghl_location_id);
+    const mirrorId = onboardedClient ? onboardedClient.coaching_dept_mirror_contact_id : '';
+
+    console.log(`Admin onboarded: ${name} (${program}) - Mirror: ${mirrorId}`);
+
+    res.json({
+      success: true,
+      message: `${name} onboarded successfully.`,
+      mirrorContactId: mirrorId,
+    });
+  } catch (err) {
+    console.error('Admin onboard failed:', err.message);
+    res.status(500).json({ error: 'Onboarding failed: ' + err.message });
   }
 });
 

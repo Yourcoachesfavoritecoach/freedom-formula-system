@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Freedom Formula - Client Onboarding</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1A1A1A;
+      color: #FFFFFF;
+      min-height: 100vh;
+      padding: 40px 20px;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    h1 {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: #F56600;
+    }
+    .subtitle {
+      font-size: 14px;
+      color: #999;
+      margin-bottom: 32px;
+    }
+    .instructions {
+      background: #252525;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 24px;
+      margin-bottom: 32px;
+    }
+    .instructions h2 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #F56600;
+      margin-bottom: 16px;
+    }
+    .instructions ol {
+      padding-left: 20px;
+      line-height: 1.8;
+      font-size: 14px;
+      color: #CCC;
+    }
+    .instructions ol li {
+      margin-bottom: 4px;
+    }
+    .instructions ol li strong {
+      color: #FFF;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #CCC;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    label .optional {
+      color: #666;
+      font-weight: 400;
+      text-transform: none;
+      font-size: 12px;
+    }
+    input, select {
+      width: 100%;
+      padding: 12px 14px;
+      font-size: 15px;
+      background: #2A2A2A;
+      border: 1px solid #444;
+      border-radius: 6px;
+      color: #FFF;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input:focus, select:focus {
+      border-color: #F56600;
+    }
+    input::placeholder {
+      color: #666;
+    }
+    select {
+      appearance: none;
+      cursor: pointer;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23999' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 14px center;
+    }
+    select option {
+      background: #2A2A2A;
+      color: #FFF;
+    }
+    .divider {
+      border: none;
+      border-top: 1px solid #333;
+      margin: 28px 0;
+    }
+    .section-label {
+      font-size: 12px;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 16px;
+    }
+    button {
+      width: 100%;
+      padding: 14px;
+      font-size: 16px;
+      font-weight: 700;
+      background: #F56600;
+      color: #FFF;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    button:hover {
+      background: #E05A00;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .message {
+      margin-top: 20px;
+      padding: 16px;
+      border-radius: 6px;
+      font-size: 14px;
+      line-height: 1.6;
+      display: none;
+    }
+    .message.success {
+      display: block;
+      background: #0a3d0a;
+      border: 1px solid #1a6b1a;
+      color: #7dff7d;
+    }
+    .message.error {
+      display: block;
+      background: #3d0a0a;
+      border: 1px solid #6b1a1a;
+      color: #ff7d7d;
+    }
+    .mirror-id {
+      font-family: monospace;
+      background: #1A1A1A;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Freedom Formula - Client Onboarding</h1>
+    <p class="subtitle">Add a new client to the system after setting up their GHL sub-account.</p>
+
+    <div class="instructions">
+      <h2>Before You Start</h2>
+      <ol>
+        <li><strong>Create the client's GHL sub-account</strong> under the Fit Biz Solutions agency.</li>
+        <li><strong>Generate a Private Integration Token (PIT)</strong> in the sub-account with all scopes enabled.</li>
+        <li><strong>Create a contact</strong> in the client's sub-account for the business owner.</li>
+        <li><strong>Fill in the form below</strong> with those details.</li>
+        <li><strong>Click "Onboard Client"</strong> - the system handles the rest (creates mirror contact, syncs fields, etc.).</li>
+      </ol>
+    </div>
+
+    <form id="onboardForm" autocomplete="off">
+      <div class="form-group">
+        <label for="adminToken">Admin Token</label>
+        <input type="password" id="adminToken" required placeholder="Paste admin token here">
+      </div>
+
+      <hr class="divider">
+
+      <div class="form-group">
+        <label for="name">Client Name</label>
+        <input type="text" id="name" required placeholder="e.g. John Smith">
+      </div>
+
+      <div class="form-group">
+        <label for="program">Program</label>
+        <select id="program" required>
+          <option value="" disabled selected>Select a program</option>
+          <option value="Freedom Formula">Freedom Formula</option>
+          <option value="Black Circle">Black Circle</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="ghl_location_id">GHL Location ID</label>
+        <input type="text" id="ghl_location_id" required placeholder="e.g. abc123XYZ">
+      </div>
+
+      <div class="form-group">
+        <label for="ghl_api_key">GHL API Key / PIT</label>
+        <input type="text" id="ghl_api_key" required placeholder="pit-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+      </div>
+
+      <div class="form-group">
+        <label for="ff_contact_id">Contact ID in client sub-account</label>
+        <input type="text" id="ff_contact_id" required placeholder="The contact ID of the business owner">
+      </div>
+
+      <hr class="divider">
+      <p class="section-label">Ad Accounts (optional)</p>
+
+      <div class="form-group">
+        <label for="google_ads_customer_id">Google Ads Customer ID <span class="optional">(optional)</span></label>
+        <input type="text" id="google_ads_customer_id" placeholder="No dashes. Example: 1234567890">
+      </div>
+
+      <div class="form-group">
+        <label for="meta_ad_account_id">Meta Ad Account ID <span class="optional">(optional)</span></label>
+        <input type="text" id="meta_ad_account_id" placeholder="Include act_ prefix. Example: act_1234567890">
+      </div>
+
+      <button type="submit" id="submitBtn">Onboard Client</button>
+    </form>
+
+    <div id="message" class="message"></div>
+  </div>
+
+  <script>
+    const form = document.getElementById('onboardForm');
+    const messageEl = document.getElementById('message');
+    const submitBtn = document.getElementById('submitBtn');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      messageEl.className = 'message';
+      messageEl.style.display = 'none';
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Onboarding...';
+
+      const token = document.getElementById('adminToken').value.trim();
+      const payload = {
+        name: document.getElementById('name').value.trim(),
+        program: document.getElementById('program').value,
+        ghl_location_id: document.getElementById('ghl_location_id').value.trim(),
+        ghl_api_key: document.getElementById('ghl_api_key').value.trim(),
+        ff_contact_id: document.getElementById('ff_contact_id').value.trim(),
+        google_ads_customer_id: document.getElementById('google_ads_customer_id').value.trim(),
+        meta_ad_account_id: document.getElementById('meta_ad_account_id').value.trim(),
+      };
+
+      try {
+        const res = await fetch('/api/admin/onboard', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + token,
+          },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || 'Unknown error');
+        }
+
+        let html = '<strong>' + escapeHtml(data.message) + '</strong>';
+        if (data.mirrorContactId) {
+          html += '<br>Mirror Contact ID: <span class="mirror-id">' + escapeHtml(data.mirrorContactId) + '</span>';
+        }
+        messageEl.innerHTML = html;
+        messageEl.className = 'message success';
+
+        form.reset();
+      } catch (err) {
+        messageEl.textContent = err.message;
+        messageEl.className = 'message error';
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Onboard Client';
+      }
+    });
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>

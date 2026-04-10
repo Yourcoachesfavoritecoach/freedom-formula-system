@@ -1,0 +1,94 @@
+<!--
+  Internal Summary Email Template — sent to Dave and Heather every Monday
+  Variables replaced at runtime:
+    {{WEEK_DATE}}, {{CLIENT_ROWS}}, {{TOTAL_CLIENTS}},
+    {{GREEN_COUNT}}, {{YELLOW_COUNT}}, {{ORANGE_COUNT}}, {{RED_COUNT}},
+    {{DANGER_COUNT}}
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FF Client Health Summary</title>
+</head>
+<body style="margin:0;padding:0;background:#F5F5F5;font-family:Arial,sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F5F5;">
+<tr><td align="center" style="padding:24px 16px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:720px;background:#FFFFFF;border-radius:8px;overflow:hidden;">
+
+  <!-- HEADER -->
+  <tr>
+    <td style="background:#522D80;padding:24px;text-align:center;">
+      <p style="margin:0;color:#FFFFFF;font-size:20px;font-weight:700;">FF Client Health Summary</p>
+      <p style="margin:6px 0 0;color:#00A8B0;font-size:14px;">Week of {{WEEK_DATE}}</p>
+    </td>
+  </tr>
+
+  <!-- STATUS COUNTS -->
+  <tr>
+    <td style="padding:24px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td align="center" style="padding:8px;">
+            <p style="margin:0;font-size:28px;font-weight:700;color:#22C55E;">{{GREEN_COUNT}}</p>
+            <p style="margin:2px 0 0;font-size:11px;color:#888888;text-transform:uppercase;letter-spacing:0.5px;">Green</p>
+          </td>
+          <td align="center" style="padding:8px;">
+            <p style="margin:0;font-size:28px;font-weight:700;color:#EAB308;">{{YELLOW_COUNT}}</p>
+            <p style="margin:2px 0 0;font-size:11px;color:#888888;text-transform:uppercase;letter-spacing:0.5px;">Yellow</p>
+          </td>
+          <td align="center" style="padding:8px;">
+            <p style="margin:0;font-size:28px;font-weight:700;color:#F97316;">{{ORANGE_COUNT}}</p>
+            <p style="margin:2px 0 0;font-size:11px;color:#888888;text-transform:uppercase;letter-spacing:0.5px;">Orange</p>
+          </td>
+          <td align="center" style="padding:8px;">
+            <p style="margin:0;font-size:28px;font-weight:700;color:#EF4444;">{{RED_COUNT}}</p>
+            <p style="margin:2px 0 0;font-size:11px;color:#888888;text-transform:uppercase;letter-spacing:0.5px;">Red</p>
+          </td>
+          <td align="center" style="padding:8px;">
+            <p style="margin:0;font-size:28px;font-weight:700;color:#1A1A1A;">{{DANGER_COUNT}}</p>
+            <p style="margin:2px 0 0;font-size:11px;color:#888888;text-transform:uppercase;letter-spacing:0.5px;">Danger</p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- DIVIDER -->
+  <tr>
+    <td style="padding:0 24px;">
+      <hr style="border:none;height:2px;background:#E5E5E5;margin:0;">
+    </td>
+  </tr>
+
+  <!-- CLIENT TABLE -->
+  <tr>
+    <td style="padding:24px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+        <tr style="background:#F9F9F9;">
+          <th style="padding:10px 8px;text-align:left;font-size:12px;color:#888888;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #E5E5E5;">Client</th>
+          <th style="padding:10px 8px;text-align:left;font-size:12px;color:#888888;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #E5E5E5;">Program</th>
+          <th style="padding:10px 8px;text-align:center;font-size:12px;color:#888888;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #E5E5E5;">Score</th>
+          <th style="padding:10px 8px;text-align:center;font-size:12px;color:#888888;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #E5E5E5;">Status</th>
+          <th style="padding:10px 8px;text-align:center;font-size:12px;color:#888888;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #E5E5E5;">WoW</th>
+          <th style="padding:10px 8px;text-align:center;font-size:12px;color:#888888;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #E5E5E5;">Danger</th>
+          <th style="padding:10px 8px;text-align:center;font-size:12px;color:#888888;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #E5E5E5;">Milestone</th>
+        </tr>
+        {{CLIENT_ROWS}}
+      </table>
+    </td>
+  </tr>
+
+  <!-- FOOTER -->
+  <tr>
+    <td style="background:#F5F5F5;padding:16px 24px;text-align:center;">
+      <p style="margin:0;font-size:12px;color:#888888;">{{TOTAL_CLIENTS}} active Freedom Formula clients</p>
+    </td>
+  </tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>

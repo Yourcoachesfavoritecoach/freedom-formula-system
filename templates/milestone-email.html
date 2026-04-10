@@ -1,0 +1,91 @@
+<!--
+  Milestone Email Template (30-day, 60-day, 90-day)
+  Variables replaced at runtime:
+    {{CLIENT_NAME}}, {{MILESTONE}} (30/60/90), {{SCORE}},
+    {{STATUS_LABEL}}, {{STATUS_COLOR}}, {{MILESTONE_BODY}},
+    {{CLIENT_EMAIL}}, {{UNSUBSCRIBE_URL}}
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{MILESTONE}}-Day Milestone</title>
+</head>
+<body style="margin:0;padding:0;background:#F5F5F5;font-family:Arial,sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F5F5;">
+<tr><td align="center" style="padding:24px 16px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:580px;background:#FFFFFF;border-radius:8px;overflow:hidden;">
+
+  <!-- HEADER -->
+  <tr>
+    <td style="background:#522D80;padding:28px 24px;text-align:center;">
+      <p style="margin:0;color:#FFFFFF;font-size:20px;font-weight:700;letter-spacing:0.5px;">THE COACHING DEPT.</p>
+      <p style="margin:6px 0 0;color:#00A8B0;font-size:14px;">Freedom Formula</p>
+    </td>
+  </tr>
+
+  <!-- MILESTONE BADGE -->
+  <tr>
+    <td style="padding:32px 24px 16px;text-align:center;">
+      <table role="presentation" cellpadding="0" cellspacing="0" align="center">
+        <tr>
+          <td style="background:#F56600;color:#FFFFFF;font-size:14px;font-weight:700;padding:8px 20px;border-radius:20px;letter-spacing:0.5px;">
+            {{MILESTONE}} DAYS
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- GREETING -->
+  <tr>
+    <td style="padding:8px 24px 4px;text-align:center;">
+      <p style="margin:0;font-size:22px;font-weight:700;color:#1A1A1A;">{{CLIENT_NAME}}, here is where you stand.</p>
+    </td>
+  </tr>
+
+  <!-- SCORE -->
+  <tr>
+    <td style="padding:20px 24px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-left:4px solid {{STATUS_COLOR}};padding-left:20px;">
+        <tr>
+          <td>
+            <p style="margin:0;font-size:36px;font-weight:700;color:#1A1A1A;line-height:1;">{{SCORE}} <span style="font-size:18px;color:#888888;font-weight:400;">/ 100</span></p>
+            <p style="margin:6px 0 0;font-size:14px;font-weight:700;color:{{STATUS_COLOR}};">{{STATUS_LABEL}}</p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- DIVIDER -->
+  <tr>
+    <td style="padding:0 24px;">
+      <hr style="border:none;height:3px;background:#00A8B0;margin:0;">
+    </td>
+  </tr>
+
+  <!-- BODY -->
+  <tr>
+    <td style="padding:24px;">
+      <div style="font-size:16px;color:#1A1A1A;line-height:1.6;">
+        {{MILESTONE_BODY}}
+      </div>
+    </td>
+  </tr>
+
+  <!-- FOOTER -->
+  <tr>
+    <td style="background:#F5F5F5;padding:20px 24px;text-align:center;">
+      <p style="margin:0;font-size:12px;color:#888888;">The Coaching Dept. &mdash; Freedom Formula</p>
+      <p style="margin:4px 0 0;font-size:12px;color:#888888;">This email was sent to {{CLIENT_EMAIL}}</p>
+      <p style="margin:4px 0 0;font-size:12px;color:#AAAAAA;"><a href="{{UNSUBSCRIBE_URL}}" style="color:#AAAAAA;text-decoration:underline;">Unsubscribe</a></p>
+    </td>
+  </tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>

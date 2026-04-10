@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Weekly Performance Check-In</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: Arial, sans-serif;
+    background: #FFFFFF;
+    color: #1A1A1A;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 20px;
+  }
+  .container {
+    width: 100%;
+    max-width: 540px;
+  }
+  .header {
+    background: #522D80;
+    padding: 28px 24px;
+    text-align: center;
+    border-radius: 8px 8px 0 0;
+  }
+  .header h1 {
+    color: #FFFFFF;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+  .form-body {
+    background: #FFFFFF;
+    border: 1px solid #E5E5E5;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    padding: 32px 24px;
+  }
+  .question {
+    margin-bottom: 32px;
+  }
+  .question:last-of-type {
+    margin-bottom: 24px;
+  }
+  .question label {
+    display: block;
+    font-size: 16px;
+    font-weight: 700;
+    color: #1A1A1A;
+    margin-bottom: 12px;
+    line-height: 1.4;
+  }
+  .question .required {
+    color: #F56600;
+    margin-left: 2px;
+  }
+  .radio-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .radio-option {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    border: 1px solid #E5E5E5;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .radio-option:hover {
+    border-color: #F56600;
+    background: #FFF8F5;
+  }
+  .radio-option input[type="radio"] {
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border: 2px solid #CCCCCC;
+    border-radius: 50%;
+    margin-right: 12px;
+    flex-shrink: 0;
+    position: relative;
+    cursor: pointer;
+  }
+  .radio-option input[type="radio"]:checked {
+    border-color: #F56600;
+  }
+  .radio-option input[type="radio"]:checked::after {
+    content: '';
+    width: 10px;
+    height: 10px;
+    background: #F56600;
+    border-radius: 50%;
+    position: absolute;
+    top: 3px;
+    left: 3px;
+  }
+  .radio-option span {
+    font-size: 15px;
+    color: #1A1A1A;
+  }
+  .conditional-text {
+    display: none;
+    margin-top: 12px;
+  }
+  .conditional-text.visible {
+    display: block;
+  }
+  .conditional-text textarea {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #E5E5E5;
+    border-radius: 6px;
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+    resize: vertical;
+    min-height: 80px;
+  }
+  .conditional-text textarea:focus {
+    outline: none;
+    border-color: #F56600;
+  }
+  .number-input {
+    width: 100%;
+    max-width: 200px;
+    padding: 12px 16px;
+    border: 1px solid #E5E5E5;
+    border-radius: 6px;
+    font-size: 16px;
+    font-family: Arial, sans-serif;
+  }
+  .number-input:focus {
+    outline: none;
+    border-color: #F56600;
+  }
+  .error-msg {
+    color: #EF4444;
+    font-size: 13px;
+    margin-top: 6px;
+    display: none;
+  }
+  .error-msg.visible {
+    display: block;
+  }
+  .submit-btn {
+    display: block;
+    width: 100%;
+    padding: 16px;
+    background: #F56600;
+    color: #FFFFFF;
+    font-size: 16px;
+    font-weight: 700;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .submit-btn:hover {
+    background: #E05500;
+  }
+  .submit-btn:disabled {
+    background: #CCCCCC;
+    cursor: not-allowed;
+  }
+  .confirmation {
+    display: none;
+    text-align: center;
+    padding: 60px 24px;
+  }
+  .confirmation.visible {
+    display: block;
+  }
+  .confirmation h2 {
+    font-size: 24px;
+    color: #1A1A1A;
+    margin-bottom: 8px;
+  }
+  .confirmation p {
+    font-size: 16px;
+    color: #666666;
+  }
+  .radio-option:has(input:checked) {
+    border-color: #F56600;
+    background: #F56600;
+  }
+  .radio-option:has(input:checked) span {
+    color: #FFFFFF;
+    font-weight: 700;
+  }
+  .retry-banner {
+    display: none;
+    background: #FFF3CD;
+    border: 1px solid #F59E0B;
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    font-size: 13px;
+    color: #92400E;
+  }
+  .retry-banner.visible {
+    display: block;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>Weekly Performance Check-In</h1>
+  </div>
+
+  <div class="form-body" id="formBody">
+    <div class="retry-banner" id="retryBanner">
+      A previous submission is being retried. Your data is safe.
+    </div>
+
+    <!-- Q1: Operational Control Rating -->
+    <div class="question">
+      <label>Rate your operational control this week.<span class="required">*</span></label>
+      <p style="font-size:13px;color:#888888;margin-bottom:12px;">1 = you were stuck in the business all week. 10 = the business ran without you.</p>
+      <div style="display:flex;gap:4px;">
+        <label class="radio-option" style="flex:1;justify-content:center;padding:12px 4px;"><input type="radio" name="opControl" value="1" style="display:none;"><span>1</span></label>
+        <label class="radio-option" style="flex:1;justify-content:center;padding:12px 4px;"><input type="radio" name="opControl" value="2" style="display:none;"><span>2</span></label>
+        <label class="radio-option" style="flex:1;justify-content:center;padding:12px 4px;"><input type="radio" name="opControl" value="3" style="display:none;"><span>3</span></label>
+        <label class="radio-option" style="flex:1;justify-content:center;padding:12px 4px;"><input type="radio" name="opControl" value="4" style="display:none;"><span>4</span></label>
+        <label class="radio-option" style="flex:1;justify-content:center;padding:12px 4px;"><input type="radio" name="opControl" value="5" style="display:none;"><span>5</span></label>
+        <label class="radio-option" style="flex:1;justify-content:center;padding:12px 4px;"><input type="radio" name="opControl" value="6" style="display:none;"><span>6</span></label>
+        <label class="radio-option" style="flex:1;justify-content:center;padding:12px 4px;"><input type="radio" name="opControl" value="7" style="display:none;"><span>7</span></label>
+        <label class="radio-option" style="flex:1;justify-content:center;padding:12px 4px;"><input type="radio" name="opControl" value="8" style="display:none;"><span>8</span></label>
+        <label class="radio-option" style="flex:1;justify-content:center;padding:12px 4px;"><input type="radio" name="opControl" value="9" style="display:none;"><span>9</span></label>
+        <label class="radio-option" style="flex:1;justify-content:center;padding:12px 4px;"><input type="radio" name="opControl" value="10" style="display:none;"><span>10</span></label>
+      </div>
+      <div class="error-msg" id="errOpControl">Please select a rating.</div>
+    </div>
+
+    <!-- Q2: Coaching Directive -->
+    <div class="question">
+      <label>Did you implement last week's coaching directive?<span class="required">*</span></label>
+      <div class="radio-group">
+        <label class="radio-option">
+          <input type="radio" name="directive" value="Yes" onchange="toggleDirectiveText()">
+          <span>Yes</span>
+        </label>
+        <label class="radio-option">
+          <input type="radio" name="directive" value="Partial" onchange="toggleDirectiveText()">
+          <span>Partial</span>
+        </label>
+        <label class="radio-option">
+          <input type="radio" name="directive" value="No" onchange="toggleDirectiveText()">
+          <span>No</span>
+        </label>
+      </div>
+      <div class="conditional-text" id="directiveTextWrap">
+        <textarea id="directiveText" placeholder="Describe what you did in one to two sentences."></textarea>
+      </div>
+      <div class="error-msg" id="errDirective">Please select an option.</div>
+      <div class="error-msg" id="errDirectiveText">Please describe what you did.</div>
+    </div>
+
+    <!-- Q3: Hours Reclaimed -->
+    <div class="question">
+      <label>How many hours did you reclaim from your business this week compared to your baseline?<span class="required">*</span></label>
+      <input type="number" class="number-input" id="hoursReclaimed" min="0" step="1" placeholder="0">
+      <div class="error-msg" id="errHours">Please enter a whole number (0 or above).</div>
+    </div>
+
+    <button class="submit-btn" id="submitBtn" onclick="handleSubmit()">Submit</button>
+  </div>
+
+  <div class="confirmation" id="confirmation">
+    <h2>Submitted. See you Monday.</h2>
+    <p>Your responses have been recorded.</p>
+  </div>
+</div>
+
+<script>
+  // Parse URL parameters for GHL contact/location targeting
+  const params = new URLSearchParams(window.location.search);
+  const CONTACT_ID = params.get('contact_id') || params.get('contactId') || '';
+  const LOCATION_ID = params.get('location_id') || params.get('locationId') || '';
+
+  // Agency API endpoint — in production, route through your own backend proxy
+  // to avoid exposing the agency key in client-side code.
+  const API_PROXY_URL = params.get('api_url') || '/api/form-submit';
+
+  function toggleDirectiveText() {
+    const selected = document.querySelector('input[name="directive"]:checked');
+    const wrap = document.getElementById('directiveTextWrap');
+    if (selected && (selected.value === 'Yes' || selected.value === 'Partial')) {
+      wrap.classList.add('visible');
+    } else {
+      wrap.classList.remove('visible');
+    }
+  }
+
+  function clearErrors() {
+    document.querySelectorAll('.error-msg').forEach(el => el.classList.remove('visible'));
+  }
+
+  function showError(id) {
+    document.getElementById(id).classList.add('visible');
+  }
+
+  function validate() {
+    clearErrors();
+    let valid = true;
+
+    const opControl = document.querySelector('input[name="opControl"]:checked');
+    if (!opControl) { showError('errOpControl'); valid = false; }
+
+    const directive = document.querySelector('input[name="directive"]:checked');
+    if (!directive) { showError('errDirective'); valid = false; }
+    if (directive && (directive.value === 'Yes' || directive.value === 'Partial')) {
+      const text = document.getElementById('directiveText').value.trim();
+      if (!text) { showError('errDirectiveText'); valid = false; }
+    }
+
+    const hours = document.getElementById('hoursReclaimed').value;
+    if (hours === '' || parseInt(hours) < 0 || !Number.isInteger(Number(hours))) {
+      showError('errHours');
+      valid = false;
+    }
+
+    return valid;
+  }
+
+  function collectData() {
+    const opControl = parseInt(document.querySelector('input[name="opControl"]:checked').value);
+    const directive = document.querySelector('input[name="directive"]:checked').value;
+    const directiveText = document.getElementById('directiveText').value.trim();
+    const hours = parseInt(document.getElementById('hoursReclaimed').value);
+
+    let directiveStatus = directive;
+    if ((directive === 'Yes' || directive === 'Partial') && directiveText) {
+      directiveStatus = `${directive} - ${directiveText}`;
+    }
+
+    return {
+      contactId: CONTACT_ID,
+      locationId: LOCATION_ID,
+      operationalControlRating: opControl,
+      directiveStatus: directiveStatus,
+      directiveRaw: directive,
+      directiveDescription: directiveText,
+      hoursReclaimed: hours,
+      submittedAt: new Date().toISOString(),
+    };
+  }
+
+  async function submitToAPI(data) {
+    const response = await fetch(API_PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error(`API returned ${response.status}`);
+    return response.json();
+  }
+
+  async function handleSubmit() {
+    if (!validate()) return;
+
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.textContent = 'Submitting...';
+
+    const data = collectData();
+
+    try {
+      await submitToAPI(data);
+      showConfirmation();
+    } catch (err) {
+      console.error('Submission failed, storing for retry:', err);
+      storeForRetry(data);
+      showConfirmation(); // Still show confirmation — data is safe
+    }
+  }
+
+  function showConfirmation() {
+    document.getElementById('formBody').style.display = 'none';
+    document.getElementById('confirmation').classList.add('visible');
+  }
+
+  // ─── localStorage Retry Logic ───
+
+  const RETRY_KEY = 'ff_form_pending_submissions';
+  const RETRY_INTERVAL = 60000; // 60 seconds
+
+  function storeForRetry(data) {
+    const pending = JSON.parse(localStorage.getItem(RETRY_KEY) || '[]');
+    pending.push(data);
+    localStorage.setItem(RETRY_KEY, JSON.stringify(pending));
+  }
+
+  async function retryPending() {
+    const pending = JSON.parse(localStorage.getItem(RETRY_KEY) || '[]');
+    if (pending.length === 0) return;
+
+    document.getElementById('retryBanner').classList.add('visible');
+
+    const stillPending = [];
+    for (const data of pending) {
+      try {
+        await submitToAPI(data);
+      } catch {
+        stillPending.push(data);
+      }
+    }
+
+    if (stillPending.length === 0) {
+      localStorage.removeItem(RETRY_KEY);
+      document.getElementById('retryBanner').classList.remove('visible');
+    } else {
+      localStorage.setItem(RETRY_KEY, JSON.stringify(stillPending));
+    }
+  }
+
+  // Retry on load and every 60 seconds
+  retryPending();
+  setInterval(retryPending, RETRY_INTERVAL);
+</script>
+</body>
+</html>

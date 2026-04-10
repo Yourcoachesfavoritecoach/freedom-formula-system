@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Weekly Check-In | The Coaching Dept.</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: Arial, sans-serif;
+    background: #F2F2F2;
+    color: #1A1A1A;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 20px 10px;
+  }
+  .container {
+    width: 100%;
+    max-width: 600px;
+  }
+
+  /* HEADER */
+  .header {
+    background: #000000;
+    padding: 28px 40px;
+    text-align: center;
+    border-radius: 8px 8px 0 0;
+  }
+  .header h1 {
+    font-family: 'Arial Black', Impact, Arial, sans-serif;
+    font-size: 28px;
+    font-weight: 900;
+    letter-spacing: 4px;
+    color: #FFFFFF;
+    text-transform: uppercase;
+  }
+  .accent-line {
+    height: 4px;
+    background: #F56600;
+  }
+  .check-in-bar {
+    background: #522D80;
+    padding: 10px 40px;
+    text-align: center;
+  }
+  .check-in-bar span {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: #FFFFFF;
+    text-transform: uppercase;
+  }
+
+  /* FORM BODY */
+  .form-body {
+    background: #FFFFFF;
+    padding: 40px 32px;
+  }
+  .greeting {
+    font-family: Georgia, serif;
+    font-size: 18px;
+    color: #1A1A1A;
+    margin-bottom: 8px;
+    line-height: 1.5;
+  }
+  .greeting strong {
+    color: #F56600;
+  }
+  .intro {
+    font-family: Georgia, serif;
+    font-size: 15px;
+    color: #666666;
+    margin-bottom: 32px;
+    line-height: 1.6;
+  }
+
+  /* QUESTIONS */
+  .question {
+    margin-bottom: 28px;
+  }
+  .question label {
+    display: block;
+    font-size: 15px;
+    font-weight: 700;
+    color: #1A1A1A;
+    margin-bottom: 8px;
+    line-height: 1.4;
+  }
+  .question .q-number {
+    color: #F56600;
+    font-weight: 700;
+    margin-right: 4px;
+  }
+  .question .required {
+    color: #F56600;
+    margin-left: 2px;
+  }
+  .question .hint {
+    font-size: 13px;
+    color: #999999;
+    margin-bottom: 10px;
+  }
+
+  /* TEXTAREA */
+  .question textarea {
+    width: 100%;
+    padding: 14px 16px;
+    border: 1px solid #E5E5E5;
+    border-radius: 6px;
+    font-family: Georgia, serif;
+    font-size: 15px;
+    line-height: 1.6;
+    resize: vertical;
+    min-height: 100px;
+    color: #1A1A1A;
+    transition: border-color 0.15s;
+  }
+  .question textarea:focus {
+    outline: none;
+    border-color: #F56600;
+    box-shadow: 0 0 0 2px rgba(245,102,0,0.1);
+  }
+
+  /* RATING SCALE */
+  .rating-row {
+    display: flex;
+    gap: 4px;
+  }
+  .rating-option {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 14px 4px;
+    border: 1px solid #E5E5E5;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .rating-option:hover {
+    border-color: #F56600;
+    background: #FFF8F5;
+  }
+  .rating-option input[type="radio"] {
+    display: none;
+  }
+  .rating-option span {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1A1A1A;
+  }
+  .rating-option:has(input:checked) {
+    border-color: #F56600;
+    background: #F56600;
+  }
+  .rating-option:has(input:checked) span {
+    color: #FFFFFF;
+  }
+  .rating-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 6px;
+    padding: 0 4px;
+  }
+  .rating-labels span {
+    font-size: 11px;
+    color: #999999;
+    letter-spacing: 0.5px;
+  }
+
+  /* DIVIDER */
+  .section-divider {
+    border: none;
+    border-top: 1px solid #E5E5E5;
+    margin: 32px 0;
+  }
+
+  /* SECTION HEADER */
+  .section-header {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #522D80;
+    margin-bottom: 24px;
+  }
+
+  /* ERROR */
+  .error-msg {
+    color: #EF4444;
+    font-size: 13px;
+    margin-top: 6px;
+    display: none;
+  }
+  .error-msg.visible {
+    display: block;
+  }
+
+  /* SUBMIT BUTTON */
+  .submit-btn {
+    display: block;
+    width: 100%;
+    padding: 16px;
+    background: #F56600;
+    color: #FFFFFF;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s;
+    margin-top: 8px;
+  }
+  .submit-btn:hover {
+    background: #E05500;
+  }
+  .submit-btn:disabled {
+    background: #CCCCCC;
+    cursor: not-allowed;
+  }
+  .deadline-text {
+    text-align: center;
+    font-size: 12px;
+    color: #999999;
+    margin-top: 10px;
+  }
+
+  /* SIGN-OFF */
+  .sign-off {
+    font-family: Georgia, serif;
+    font-size: 16px;
+    color: #1A1A1A;
+    margin-top: 32px;
+    padding-top: 24px;
+    border-top: 1px solid #E5E5E5;
+    line-height: 1.8;
+  }
+  .sign-off .tagline {
+    font-style: italic;
+  }
+  .sign-off .signature {
+    font-weight: 700;
+  }
+
+  /* TEAL ACCENT */
+  .teal-line {
+    height: 3px;
+    background: #00B2A9;
+  }
+
+  /* FOOTER */
+  .footer {
+    background: #000000;
+    padding: 18px 40px;
+    text-align: center;
+    border-radius: 0 0 8px 8px;
+  }
+  .footer span {
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: #666666;
+    text-transform: uppercase;
+  }
+
+  /* CONFIRMATION */
+  .confirmation {
+    display: none;
+    text-align: center;
+    padding: 60px 32px;
+    background: #FFFFFF;
+  }
+  .confirmation.visible {
+    display: block;
+  }
+  .confirmation h2 {
+    font-family: Georgia, serif;
+    font-size: 24px;
+    color: #1A1A1A;
+    margin-bottom: 12px;
+  }
+  .confirmation p {
+    font-family: Georgia, serif;
+    font-size: 16px;
+    color: #666666;
+    line-height: 1.6;
+  }
+  .confirmation .tagline {
+    font-style: italic;
+    color: #1A1A1A;
+    margin-top: 24px;
+    font-weight: 700;
+  }
+
+  /* RETRY BANNER */
+  .retry-banner {
+    display: none;
+    background: #FFF3CD;
+    border: 1px solid #F59E0B;
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    font-size: 13px;
+    color: #92400E;
+  }
+  .retry-banner.visible {
+    display: block;
+  }
+
+  /* RADIO GROUP (Yes/Partial/No) */
+  .radio-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .radio-option {
+    display: flex;
+    align-items: center;
+    padding: 14px 16px;
+    border: 1px solid #E5E5E5;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .radio-option:hover {
+    border-color: #F56600;
+    background: #FFF8F5;
+  }
+  .radio-option input[type="radio"] {
+    margin-right: 10px;
+    accent-color: #F56600;
+  }
+  .radio-option span {
+    font-size: 15px;
+    font-weight: 600;
+    color: #1A1A1A;
+  }
+  .radio-option:has(input:checked) {
+    border-color: #F56600;
+    background: #FFF8F5;
+  }
+
+  /* CONDITIONAL TEXT */
+  .conditional-text {
+    display: none;
+    margin-top: 12px;
+  }
+  .conditional-text.visible {
+    display: block;
+  }
+
+  /* NUMBER INPUT */
+  .number-input {
+    width: 100%;
+    max-width: 160px;
+    padding: 14px 16px;
+    border: 1px solid #E5E5E5;
+    border-radius: 6px;
+    font-family: Georgia, serif;
+    font-size: 15px;
+    color: #1A1A1A;
+    transition: border-color 0.15s;
+  }
+  .number-input:focus {
+    outline: none;
+    border-color: #F56600;
+    box-shadow: 0 0 0 2px rgba(245,102,0,0.1);
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>Coaching Dept.</h1>
+  </div>
+  <div class="accent-line"></div>
+  <div class="check-in-bar">
+    <span>Weekly Check-In</span>
+  </div>
+
+  <div class="form-body" id="formBody">
+    <div class="retry-banner" id="retryBanner">
+      A previous submission is being retried. Your data is safe.
+    </div>
+
+    <p class="greeting">Hey <strong id="clientName">there</strong>,</p>
+    <p class="intro">Your weekly accountability questions. Be honest. Be specific. This is how we coach you better.</p>
+
+    <!-- SECTION: LAST WEEK REVIEW -->
+    <div class="section-header">Looking Back</div>
+
+    <!-- Q1 -->
+    <div class="question">
+      <label><span class="q-number">Q1.</span> What was your biggest priority last week?<span class="required">*</span></label>
+      <textarea id="q1" placeholder="What were you focused on?"></textarea>
+      <div class="error-msg" id="errQ1">This field is required.</div>
+    </div>
+
+    <!-- Q2 -->
+    <div class="question">
+      <label><span class="q-number">Q2.</span> Rate last week on a scale of 1-10.<span class="required">*</span></label>
+      <p class="hint">1 = rough week. 10 = amazing week.</p>
+      <div class="rating-row">
+        <label class="rating-option"><input type="radio" name="rating" value="1"><span>1</span></label>
+        <label class="rating-option"><input type="radio" name="rating" value="2"><span>2</span></label>
+        <label class="rating-option"><input type="radio" name="rating" value="3"><span>3</span></label>
+        <label class="rating-option"><input type="radio" name="rating" value="4"><span>4</span></label>
+        <label class="rating-option"><input type="radio" name="rating" value="5"><span>5</span></label>
+        <label class="rating-option"><input type="radio" name="rating" value="6"><span>6</span></label>
+        <label class="rating-option"><input type="radio" name="rating" value="7"><span>7</span></label>
+        <label class="rating-option"><input type="radio" name="rating" value="8"><span>8</span></label>
+        <label class="rating-option"><input type="radio" name="rating" value="9"><span>9</span></label>
+        <label class="rating-option"><input type="radio" name="rating" value="10"><span>10</span></label>
+      </div>
+      <div class="rating-labels">
+        <span>Rough</span>
+        <span>Amazing</span>
+      </div>
+      <div class="error-msg" id="errQ2">Please select a rating.</div>
+    </div>
+
+    <!-- Q3 -->
+    <div class="question">
+      <label><span class="q-number">Q3.</span> Did you accomplish it? If not, why not?<span class="required">*</span></label>
+      <textarea id="q3" placeholder="Be honest with yourself."></textarea>
+      <div class="error-msg" id="errQ3">This field is required.</div>
+    </div>
+
+    <!-- Q4 -->
+    <div class="question">
+      <label><span class="q-number">Q4.</span> What did you learn last week?<span class="required">*</span></label>
+      <textarea id="q4" placeholder="About yourself, your team, your business."></textarea>
+      <div class="error-msg" id="errQ4">This field is required.</div>
+    </div>
+
+    <hr class="section-divider">
+    <div class="section-header">Highlights</div>
+
+    <!-- Q5 -->
+    <div class="question">
+      <label><span class="q-number">Q5.</span> What was your biggest business highlight last week?<span class="required">*</span></label>
+      <textarea id="q5" placeholder="A win, a milestone, a breakthrough."></textarea>
+      <div class="error-msg" id="errQ5">This field is required.</div>
+    </div>
+
+    <!-- Q6 -->
+    <div class="question">
+      <label><span class="q-number">Q6.</span> What was your biggest personal highlight last week?<span class="required">*</span></label>
+      <textarea id="q6" placeholder="Outside of business. Family, health, something that matters."></textarea>
+      <div class="error-msg" id="errQ6">This field is required.</div>
+    </div>
+
+    <hr class="section-divider">
+    <div class="section-header">Obstacles</div>
+
+    <!-- Q7 -->
+    <div class="question">
+      <label><span class="q-number">Q7.</span> What was your biggest obstacle last week?<span class="required">*</span></label>
+      <textarea id="q7" placeholder="What got in the way?"></textarea>
+      <div class="error-msg" id="errQ7">This field is required.</div>
+    </div>
+
+    <hr class="section-divider">
+    <div class="section-header">Looking Ahead</div>
+
+    <!-- Q8 -->
+    <div class="question">
+      <label><span class="q-number">Q8.</span> What 2-3 big priorities need to happen this week to make it a success?<span class="required">*</span></label>
+      <textarea id="q8" placeholder="Be specific. What are you committing to?"></textarea>
+      <div class="error-msg" id="errQ8">This field is required.</div>
+    </div>
+
+    <!-- Q9 -->
+    <div class="question">
+      <label><span class="q-number">Q9.</span> What do you need to solve it?<span class="required">*</span></label>
+      <textarea id="q9" placeholder="Resources, decisions, conversations."></textarea>
+      <div class="error-msg" id="errQ9">This field is required.</div>
+    </div>
+
+    <!-- Q10 -->
+    <div class="question">
+      <label><span class="q-number">Q10.</span> What do you need help with, and who do you need to contact?<span class="required">*</span></label>
+      <textarea id="q10" placeholder="Who needs to hear from you? What support do you need from us?"></textarea>
+      <div class="error-msg" id="errQ10">This field is required.</div>
+    </div>
+
+    <hr class="section-divider">
+    <div class="section-header">Impact</div>
+
+    <!-- Q11 -->
+    <div class="question">
+      <label><span class="q-number">Q11.</span> Who did you help this week?<span class="required">*</span></label>
+      <textarea id="q11" placeholder="A team member, a client, a friend. Who got better because of you?"></textarea>
+      <div class="error-msg" id="errQ11">This field is required.</div>
+    </div>
+
+    <hr class="section-divider">
+    <div class="section-header">Scoring</div>
+
+    <!-- Q12 -->
+    <div class="question">
+      <label><span class="q-number">Q12.</span> Rate your operational control this week.<span class="required">*</span></label>
+      <p class="hint">1 = you were stuck in the business all week. 10 = the business ran without you.</p>
+      <div class="rating-row">
+        <label class="rating-option"><input type="radio" name="opControl" value="1"><span>1</span></label>
+        <label class="rating-option"><input type="radio" name="opControl" value="2"><span>2</span></label>
+        <label class="rating-option"><input type="radio" name="opControl" value="3"><span>3</span></label>
+        <label class="rating-option"><input type="radio" name="opControl" value="4"><span>4</span></label>
+        <label class="rating-option"><input type="radio" name="opControl" value="5"><span>5</span></label>
+        <label class="rating-option"><input type="radio" name="opControl" value="6"><span>6</span></label>
+        <label class="rating-option"><input type="radio" name="opControl" value="7"><span>7</span></label>
+        <label class="rating-option"><input type="radio" name="opControl" value="8"><span>8</span></label>
+        <label class="rating-option"><input type="radio" name="opControl" value="9"><span>9</span></label>
+        <label class="rating-option"><input type="radio" name="opControl" value="10"><span>10</span></label>
+      </div>
+      <div class="rating-labels">
+        <span>Stuck</span>
+        <span>Freedom</span>
+      </div>
+      <div class="error-msg" id="errQ12">Please select a rating.</div>
+    </div>
+
+    <!-- Q13 -->
+    <div class="question">
+      <label><span class="q-number">Q13.</span> Did you implement last week's coaching directive?<span class="required">*</span></label>
+      <div class="radio-group">
+        <label class="radio-option"><input type="radio" name="coachingDirective" value="Yes" onchange="toggleConditionalText()"><span>Yes</span></label>
+        <label class="radio-option"><input type="radio" name="coachingDirective" value="Partial" onchange="toggleConditionalText()"><span>Partial</span></label>
+        <label class="radio-option"><input type="radio" name="coachingDirective" value="No" onchange="toggleConditionalText()"><span>No</span></label>
+      </div>
+      <div class="conditional-text" id="conditionalDirective">
+        <textarea id="q13detail" placeholder="Describe what you did in one to two sentences."></textarea>
+      </div>
+      <div class="error-msg" id="errQ13">Please select an option.</div>
+      <div class="error-msg" id="errQ13detail">Please describe what you did.</div>
+    </div>
+
+    <!-- Q14 -->
+    <div class="question">
+      <label><span class="q-number">Q14.</span> How many hours did you reclaim from your business this week compared to your baseline?<span class="required">*</span></label>
+      <input type="number" class="number-input" id="q14" placeholder="0" min="0" step="1">
+      <div class="error-msg" id="errQ14">Please enter a valid number (0 or greater).</div>
+    </div>
+
+    <button class="submit-btn" id="submitBtn" onclick="handleSubmit()">Submit Your Check-In</button>
+    <p class="deadline-text">Deadline: Monday, 10:00 AM ET</p>
+
+    <div class="sign-off">
+      <p class="tagline">Profit Favors the Decisive.</p>
+      <img src="https://assets.cdn.filesafe.space/FeySgmJup9wqIQhhJomk/media/69d00b8931ee04b37018da8f.png" alt="Dave Dunham" style="height:90px;margin-top:8px;display:block;">
+    </div>
+  </div>
+
+  <div class="confirmation" id="confirmation">
+    <h2>Check-in received.</h2>
+    <p>Your responses have been recorded. Now go execute.</p>
+    <p class="tagline">Profit Favors the Decisive.</p>
+  </div>
+
+  <div class="teal-line"></div>
+  <div class="footer">
+    <span>The Coaching Dept. &bull; Profit Favors the Decisive</span>
+  </div>
+</div>
+
+<script>
+  // ─── CONFIGURATION ───
+  // Replace this with your GHL Inbound Webhook URL (from the workflow you create)
+  const WEBHOOK_URL = 'https://cd-checkin.soft-wildflower-3e72.workers.dev';
+
+  // Parse URL parameters (passed from Friday coaching email)
+  const params = new URLSearchParams(window.location.search);
+  const CONTACT_ID = params.get('contact_id') || params.get('contactId') || '';
+  const LOCATION_ID = params.get('location_id') || params.get('locationId') || 'FeySgmJup9wqIQhhJomk';
+  const FIRST_NAME = params.get('first_name') || params.get('firstName') || '';
+  const CLIENT_EMAIL = params.get('email') || '';
+
+  // Personalize greeting
+  if (FIRST_NAME) {
+    document.getElementById('clientName').textContent = FIRST_NAME;
+  }
+
+  function clearErrors() {
+    document.querySelectorAll('.error-msg').forEach(el => el.classList.remove('visible'));
+  }
+
+  function showError(id) {
+    document.getElementById(id).classList.add('visible');
+  }
+
+  function toggleConditionalText() {
+    const selected = document.querySelector('input[name="coachingDirective"]:checked');
+    const container = document.getElementById('conditionalDirective');
+    if (selected && (selected.value === 'Yes' || selected.value === 'Partial')) {
+      container.classList.add('visible');
+    } else {
+      container.classList.remove('visible');
+    }
+  }
+
+  function validate() {
+    clearErrors();
+    let valid = true;
+
+    // Q1-Q10 text fields required (skip Q2 - rating)
+    for (let i = 1; i <= 11; i++) {
+      if (i === 2) continue; // Q2 is rating, handled separately
+      const el = document.getElementById('q' + i);
+      if (!el.value.trim()) {
+        showError('errQ' + i);
+        valid = false;
+      }
+    }
+
+    // Q2: rating required
+    const rating = document.querySelector('input[name="rating"]:checked');
+    if (!rating) {
+      showError('errQ2');
+      valid = false;
+    }
+
+    // Q12: operational control rating required
+    const opControl = document.querySelector('input[name="opControl"]:checked');
+    if (!opControl) {
+      showError('errQ12');
+      valid = false;
+    }
+
+    // Q13: coaching directive radio required
+    const directive = document.querySelector('input[name="coachingDirective"]:checked');
+    if (!directive) {
+      showError('errQ13');
+      valid = false;
+    } else if ((directive.value === 'Yes' || directive.value === 'Partial') && !document.getElementById('q13detail').value.trim()) {
+      showError('errQ13detail');
+      valid = false;
+    }
+
+    // Q14: hours reclaimed required, integer >= 0
+    const q14 = document.getElementById('q14');
+    const q14Val = q14.value.trim();
+    if (q14Val === '' || isNaN(parseInt(q14Val)) || parseInt(q14Val) < 0) {
+      showError('errQ14');
+      valid = false;
+    }
+
+    // Scroll to first error
+    if (!valid) {
+      const firstError = document.querySelector('.error-msg.visible');
+      if (firstError) {
+        firstError.closest('.question').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+
+    return valid;
+  }
+
+  function collectData() {
+    const rating = document.querySelector('input[name="rating"]:checked');
+    const opControl = document.querySelector('input[name="opControl"]:checked');
+    const directive = document.querySelector('input[name="coachingDirective"]:checked');
+    const now = new Date();
+    const localTime = now.toLocaleString('en-US', { timeZone: 'America/New_York' });
+
+    const r = {
+      q1_biggest_priority: document.getElementById('q1').value.trim(),
+      q2_rating: rating ? parseInt(rating.value) : null,
+      q3_accomplished: document.getElementById('q3').value.trim(),
+      q4_learned: document.getElementById('q4').value.trim(),
+      q5_business_highlight: document.getElementById('q5').value.trim(),
+      q6_personal_highlight: document.getElementById('q6').value.trim(),
+      q7_biggest_obstacle: document.getElementById('q7').value.trim(),
+      q8_priorities_this_week: document.getElementById('q8').value.trim(),
+      q9_need_to_solve: document.getElementById('q9').value.trim(),
+      q10_need_help: document.getElementById('q10').value.trim(),
+      q11_who_helped: document.getElementById('q11').value.trim(),
+    };
+
+    // Build the full note body that GHL workflow will add to the contact
+    // Q12-Q14 are scoring fields and NOT included in the note
+    const noteBody = [
+      'Weekly Reflection Submission - ' + localTime,
+      '',
+      'Q1: What was your biggest priority last week?',
+      r.q1_biggest_priority,
+      '',
+      'Q2: Rate last week on a scale of 1-10',
+      r.q2_rating + '/10',
+      '',
+      'Q3: Did you accomplish it? If not, why not?',
+      r.q3_accomplished,
+      '',
+      'Q4: What did you learn last week?',
+      r.q4_learned,
+      '',
+      'Q5: What was your biggest business highlight last week?',
+      r.q5_business_highlight,
+      '',
+      'Q6: What was your biggest personal highlight last week?',
+      r.q6_personal_highlight,
+      '',
+      'Q7: What was your biggest obstacle last week?',
+      r.q7_biggest_obstacle,
+      '',
+      'Q8: What 2-3 big priorities need to happen this week to make it a success?',
+      r.q8_priorities_this_week,
+      '',
+      'Q9: What do you need to solve it?',
+      r.q9_need_to_solve,
+      '',
+      'Q10: What do you need help with, and who do you need to contact?',
+      r.q10_need_help,
+      '',
+      'Q11: Who did you help this week?',
+      r.q11_who_helped,
+    ].join('\n');
+
+    return {
+      // Contact identification (GHL workflow uses these to find the contact)
+      contact_id: CONTACT_ID,
+      location_id: LOCATION_ID,
+      first_name: FIRST_NAME,
+      email: CLIENT_EMAIL,
+
+      // Structured response data (GHL workflow maps these to custom fields)
+      rating: r.q2_rating,
+      q1_biggest_priority: r.q1_biggest_priority,
+      q3_accomplished: r.q3_accomplished,
+      q4_learned: r.q4_learned,
+      q5_business_highlight: r.q5_business_highlight,
+      q6_personal_highlight: r.q6_personal_highlight,
+      q7_biggest_obstacle: r.q7_biggest_obstacle,
+      q8_priorities_this_week: r.q8_priorities_this_week,
+      q9_need_to_solve: r.q9_need_to_solve,
+      q10_need_help: r.q10_need_help,
+      q11_who_helped: r.q11_who_helped,
+
+      // Scoring fields (Q12-Q14) — top-level for GHL custom field mapping
+      operational_control_rating: opControl ? parseInt(opControl.value) : null,
+      coaching_directive: directive ? directive.value : '',
+      coaching_directive_description: document.getElementById('q13detail').value.trim(),
+      hours_reclaimed: parseInt(document.getElementById('q14').value) || 0,
+
+      // Pre-built note body (GHL workflow pastes this into a contact note)
+      note_body: noteBody,
+
+      // Metadata
+      submitted_at: now.toISOString(),
+      submitted_at_local: localTime,
+    };
+  }
+
+  async function submitToWebhook(data) {
+    const response = await fetch(WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error('Webhook returned ' + response.status);
+    return true;
+  }
+
+  async function handleSubmit() {
+    if (!validate()) return;
+
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.textContent = 'Submitting...';
+
+    const data = collectData();
+
+    try {
+      await submitToWebhook(data);
+      showConfirmation();
+    } catch (err) {
+      console.error('Submission failed, storing for retry:', err);
+      storeForRetry(data);
+      showConfirmation(); // Still show confirmation — data is safe locally
+    }
+  }
+
+  function showConfirmation() {
+    document.getElementById('formBody').style.display = 'none';
+    document.getElementById('confirmation').classList.add('visible');
+  }
+
+  // ─── localStorage Retry Logic ───
+  const RETRY_KEY = 'cd_checkin_pending';
+  const RETRY_INTERVAL = 60000;
+
+  function storeForRetry(data) {
+    const pending = JSON.parse(localStorage.getItem(RETRY_KEY) || '[]');
+    pending.push(data);
+    localStorage.setItem(RETRY_KEY, JSON.stringify(pending));
+  }
+
+  async function retryPending() {
+    const pending = JSON.parse(localStorage.getItem(RETRY_KEY) || '[]');
+    if (pending.length === 0) return;
+
+    document.getElementById('retryBanner').classList.add('visible');
+
+    const stillPending = [];
+    for (const data of pending) {
+      try {
+        await submitToWebhook(data);
+      } catch {
+        stillPending.push(data);
+      }
+    }
+
+    if (stillPending.length === 0) {
+      localStorage.removeItem(RETRY_KEY);
+      document.getElementById('retryBanner').classList.remove('visible');
+    } else {
+      localStorage.setItem(RETRY_KEY, JSON.stringify(stillPending));
+    }
+  }
+
+  retryPending();
+  setInterval(retryPending, RETRY_INTERVAL);
+</script>
+</body>
+</html>

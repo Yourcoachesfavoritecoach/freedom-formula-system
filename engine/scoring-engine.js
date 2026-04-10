@@ -1,0 +1,496 @@
+/**
+ * Scoring Engine
+ * Runs every Sunday at 11:00pm via cron.
+ * Loops through every Freedom Formula client in the registry,
+ * pulls data, calculates health score, writes results back.
+ */
+
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+
+const ghl = require('../utils/ghl-api');
+const googleAds = require('../utils/google-ads-api');
+const metaAds = require('../utils/meta-ads-api');
+const { calculateScore, getScoreStatus } = require('../utils/score-calculator');
+const { updateAllRollingAverages, getCustomFieldValue } = require('../utils/rolling-averages');
+
+const COACHING_DEPT_ID = process.env.COACHING_DEPT_LOCATION_ID;
+const REENGAGEMENT_WORKFLOW_ID = process.env.GHL_REENGAGEMENT_WORKFLOW_ID;
+
+function loadRegistry() {
+  const registryPath = path.resolve(__dirname, '../setup/client-registry.json');
+  delete require.cache[require.resolve(registryPath)];
+  const registry = require(registryPath);
+  const clients = registry.clients.filter((c) => c.program === 'Freedom Formula' && c.ghl_location_id !== 'USMAN_FILLS_THIS');
+
+  // Register each client's sub-account API key
+  for (const client of registry.clients) {
+    if (client.ghl_api_key && client.ghl_location_id) {
+      ghl.registerLocationKey(client.ghl_location_id, client.ghl_api_key);
+    }
+  }
+
+  return clients;
+}
+
+function getWeekDates() {
+  const now = new Date();
+  const dayOfWeek = now.getDay(); // 0 = Sunday
+  const endDate = new Date(now);
+  endDate.setDate(endDate.getDate() - dayOfWeek); // This Sunday
+  endDate.setHours(23, 59, 59, 999);
+
+  const startDate = new Date(endDate);
+  startDate.setDate(startDate.getDate() - 6); // Previous Monday
+  startDate.setHours(0, 0, 0, 0);
+
+  return {
+    start: startDate,
+    end: endDate,
+    startStr: startDate.toISOString().split('T')[0],
+    endStr: endDate.toISOString().split('T')[0],
+  };
+}
+
+async function scoreClient(client) {
+  const loc = client.ghl_location_id;
+  const contactId = client.ff_contact_id;
+  const mirrorId = client.coaching_dept_mirror_contact_id;
+  const week = getWeekDates();
+
+  console.log(`\nScoring: ${client.name}`);
+  console.log(`  Location: ${loc} | Contact: ${contactId}`);
+
+  // Load custom field definitions from client sub-account
+  const fieldDefsResponse = await ghl.getCustomFields(loc);
+  const fieldDefs = fieldDefsResponse.customFields || [];
+
+  // Load contact data
+  const contactResponse = await ghl.getContact(loc, contactId);
+  const contact = contactResponse.contact || contactResponse;
+
+  // Helper to read fields
+  const readField = (name) => getCustomFieldValue(contactResponse, name, fieldDefs);
+
+  // ─── Pull Engagement Data ───
+
+  // Metric 1: Form submission timestamp
+  const formSubmittedTimestamp = readField('FF Operational Control Rating') ? new Date().toISOString() : null;
+  // Check actual submission by looking at contact activity notes
+  // The form POSTs and creates a note with timestamp
+
+  // Metric 2: Coaching call disposition
+  let appointmentDisposition = null;
+  try {
+    // Get all calendars for this location
+    const calData = await ghl.getCalendars(loc);
+    const calendars = calData.calendars || [];
+
+    // Search all calendars for appointments in the scoring week
+    for (const cal of calendars) {
+      try {
+        const appointments = await ghl.getAppointments(loc, {
+          calendarId: cal.id,
+          startTime: week.start.toISOString(),
+          endTime: week.end.toISOString(),
+        });
+        if (appointments.events && appointments.events.length > 0) {
+          // Find appointments for this contact
+          for (const appt of appointments.events) {
+            if (appt.contactId === contactId || appt.contact_id === contactId) {
+              appointmentDisposition = appt.appointmentStatus || appt.status || null;
+            }
+          }
+        }
+      } catch (calErr) {
+        // Skip calendars that fail
+      }
+    }
+  } catch (err) {
+    console.log(`  Warning: Could not fetch appointments - ${err.message}`);
+  }
+
+  // Metric 3: Outreach response time
+  let lastOutboundTimestamp = null;
+  let lastInboundTimestamp = null;
+  let outreachSentThisWeek = false;
+  try {
+    const convos = await ghl.getConversations(loc, contactId);
+    if (convos.conversations && convos.conversations.length > 0) {
+      const convoId = convos.conversations[0].id;
+      const messages = await ghl.getMessages(loc, convoId, { limit: 20 });
+      if (messages.messages && Array.isArray(messages.messages)) {
+        for (const msg of messages.messages) {
+          const msgDate = new Date(msg.dateAdded);
+          if (msgDate >= week.start && msgDate <= week.end) {
+            if (msg.direction === 'outbound' || msg.type === 'TYPE_OUTBOUND') {
+              outreachSentThisWeek = true;
+              if (!lastOutboundTimestamp || msgDate > new Date(lastOutboundTimestamp)) {
+                lastOutboundTimestamp = msg.dateAdded;
+              }
+            }
+            if (msg.direction === 'inbound' || msg.type === 'TYPE_INBOUND') {
+              if (!lastInboundTimestamp || msgDate > new Date(lastInboundTimestamp)) {
+                lastInboundTimestamp = msg.dateAdded;
+              }
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.log(`  Warning: Could not fetch conversations - ${err.message}`);
+  }
+
+  // ─── Pull Operational Data ───
+
+  const operationalControlRating = readField('FF Operational Control Rating');
+  const directiveStatus = readField('FF Coaching Directive Status');
+  const hoursReclaimedThisWeek = readField('FF Hours Reclaimed This Week');
+  const hoursRunningTotal = parseFloat(readField('FF Hours Reclaimed Running Total') || 0);
+
+  // Update hours running total
+  if (hoursReclaimedThisWeek !== null && hoursReclaimedThisWeek !== '') {
+    const newTotal = hoursRunningTotal + parseFloat(hoursReclaimedThisWeek);
+    await ghl.writeFieldsToContact(loc, contactId, {
+      'FF Hours Reclaimed Running Total': newTotal,
+    }, fieldDefs);
+  }
+
+  // ─── Pull Business Performance Data ───
+
+  const weeklyRevenue = parseFloat(readField('FF Weekly Revenue') || 0);
+  const weeklyNewMembers = parseFloat(readField('FF Weekly New Members') || 0);
+  const weeklyCancellations = parseFloat(readField('FF Weekly Cancellations') || 0);
+  const activeMemberCount = parseFloat(readField('FF Active Member Count') || 0);
+
+  // Google Ads data
+  let googleLeads = 0;
+  let googleSpend = 0;
+  let googleFailed = false;
+  if (client.google_ads_customer_id && client.google_ads_customer_id !== 'USMAN_FILLS_THIS') {
+    const gResult = await googleAds.getWeeklyLeadsAndSpend(
+      client.google_ads_customer_id, week.startStr, week.endStr
+    );
+    if (gResult === null) {
+      googleFailed = true;
+      console.log('  Warning: Google Ads pull failed, holding prior score for ad metrics');
+    } else {
+      googleLeads = gResult.leads;
+      googleSpend = gResult.spend;
+    }
+  }
+
+  // Meta Ads data
+  let metaLeads = 0;
+  let metaSpend = 0;
+  let metaFailed = false;
+  if (client.meta_ad_account_id && client.meta_ad_account_id !== 'USMAN_FILLS_THIS') {
+    const mResult = await metaAds.getWeeklyLeadsAndSpend(
+      client.meta_ad_account_id, week.startStr, week.endStr
+    );
+    if (mResult === null) {
+      metaFailed = true;
+      console.log('  Warning: Meta Ads pull failed, holding prior score for ad metrics');
+    } else {
+      metaLeads = mResult.leads;
+      metaSpend = mResult.spend;
+    }
+  }
+
+  // Combined lead and spend totals
+  const totalWeeklyLeads = googleLeads + metaLeads;
+  const totalWeeklySpend = googleSpend + metaSpend;
+  const blendedCPL = totalWeeklyLeads > 0 ? totalWeeklySpend / totalWeeklyLeads : 0;
+  const conversionRate = totalWeeklyLeads > 0 ? weeklyNewMembers / totalWeeklyLeads : 0;
+
+  // Write weekly metrics to contact
+  await ghl.writeFieldsToContact(loc, contactId, {
+    'FF Weekly Leads': totalWeeklyLeads,
+    'FF Blended CPL This Week': Math.round(blendedCPL * 100) / 100,
+    'FF Conversion Rate This Week': Math.round(conversionRate * 10000) / 100,
+  }, fieldDefs);
+
+  // Log data pull failures
+  if (googleFailed) {
+    await ghl.addContactNote(loc, contactId,
+      `Score hold - Google Ads data pull failed - ${new Date().toISOString().split('T')[0]}`);
+  }
+  if (metaFailed) {
+    await ghl.addContactNote(loc, contactId,
+      `Score hold - Meta Ads data pull failed - ${new Date().toISOString().split('T')[0]}`);
+  }
+
+  // ─── Update Rolling Averages ───
+
+  const averages = await updateAllRollingAverages(loc, contactId, {
+    revenue: weeklyRevenue,
+    leads: totalWeeklyLeads,
+    conversionRate: conversionRate * 100,
+    blendedCPL: blendedCPL,
+  }, fieldDefs);
+
+  // ─── Consecutive Misses ───
+
+  let consecutiveMissedForms = parseInt(readField('FF Consecutive Missed Forms') || 0);
+  let consecutiveMissedCalls = parseInt(readField('FF Consecutive Missed Calls') || 0);
+
+  // Form: check if org chart status was updated this week (proxy for form submission)
+  const formSubmitted = operationalControlRating && operationalControlRating !== '';
+  if (!formSubmitted) {
+    consecutiveMissedForms++;
+  } else {
+    consecutiveMissedForms = 0;
+  }
+
+  // Calls: check appointment disposition
+  if (!appointmentDisposition || appointmentDisposition === 'no_show' || appointmentDisposition === 'cancelled') {
+    consecutiveMissedCalls++;
+  } else if (appointmentDisposition === 'attended' || appointmentDisposition === 'completed' || appointmentDisposition === 'showed') {
+    consecutiveMissedCalls = 0;
+  }
+
+  await ghl.writeFieldsToContact(loc, contactId, {
+    'FF Consecutive Missed Forms': consecutiveMissedForms,
+    'FF Consecutive Missed Calls': consecutiveMissedCalls,
+  }, fieldDefs);
+
+  // ─── KPI completeness check ───
+
+  const kpiFields = {
+    revenue: readField('FF Weekly Revenue'),
+    leads: readField('FF Weekly Leads'),
+    newMembers: readField('FF Weekly New Members'),
+    cancellations: readField('FF Weekly Cancellations'),
+    activeMemberCount: readField('FF Active Member Count'),
+  };
+
+  // ─── Calculate Score ───
+
+  const lastWeekScore = parseFloat(readField('FF Health Score This Week') || 0);
+
+  const scoreData = {
+    formSubmittedTimestamp: formSubmitted ? new Date().toISOString() : null,
+    scoringWindowEnd: week.end.toISOString(),
+    appointmentDisposition,
+    lastOutboundTimestamp,
+    lastInboundTimestamp,
+    outreachSentThisWeek,
+    operationalControlRating: parseFloat(operationalControlRating || 0),
+    kpiFields,
+    directiveStatus,
+    hoursReclaimedThisWeek: parseFloat(hoursReclaimedThisWeek || 0),
+    weeklyRevenue,
+    revenue4WeekAvg: averages.revenue4WeekAvg || parseFloat(readField('FF Revenue 4-Week Avg') || 0),
+    weeklyLeads: totalWeeklyLeads,
+    leadVolume4WeekAvg: averages.leadVolume4WeekAvg || parseFloat(readField('FF Lead Volume 4-Week Avg') || 0),
+    conversionRateThisWeek: conversionRate * 100,
+    conversionRate4WeekAvg: averages.conversionRate4WeekAvg || parseFloat(readField('FF Conversion Rate 4-Week Avg') || 0),
+    blendedCPLThisWeek: blendedCPL,
+    blendedCPL4WeekAvg: averages.blendedCPL4WeekAvg || parseFloat(readField('FF Blended CPL 4-Week Avg') || 0),
+    lastWeekScore,
+    consecutiveMissedForms,
+    consecutiveMissedCalls,
+  };
+
+  let { total, breakdown, dangerTriggers } = calculateScore(scoreData);
+
+  // ─── Override Logic ───
+
+  const overrideNote = readField('FF Score Override Note');
+  if (overrideNote && overrideNote.trim() !== '') {
+    const overrideMatch = overrideNote.match(/(-?\d+)/);
+    if (overrideMatch) {
+      const adjustment = parseInt(overrideMatch[1]);
+      if (adjustment < 0) {
+        total = Math.max(0, total + adjustment);
+        await ghl.addContactNote(loc, contactId,
+          `Score override applied: ${adjustment} points. Note: ${overrideNote}. Final score: ${total}`);
+      }
+    }
+    // Clear override after applying
+    await ghl.writeFieldsToContact(loc, contactId, {
+      'FF Score Override Note': '',
+    }, fieldDefs);
+  }
+
+  total = Math.min(100, Math.max(0, total));
+  const status = getScoreStatus(total);
+
+  console.log(`  Score: ${total}/100 (${status.label} - ${status.description})`);
+  console.log(`  Breakdown:`, JSON.stringify(breakdown));
+
+  // ─── Write Score to Client Sub-Account ───
+
+  await ghl.writeFieldsToContact(loc, contactId, {
+    'FF Health Score Last Week': lastWeekScore,
+    'FF Health Score This Week': total,
+    'FF Score Status': `${status.label} / ${status.description}`,
+  }, fieldDefs);
+
+  // ─── Danger Zone Logic ───
+
+  const dangerActive = dangerTriggers.length > 0;
+  const wasDangerActive = readField('FF Danger Zone Active') === 'true';
+
+  if (dangerActive && !wasDangerActive) {
+    console.log(`  DANGER ZONE ACTIVATED: ${dangerTriggers.join(', ')}`);
+
+    // Tag client
+    await ghl.addContactTag(loc, contactId, ['FF-Danger']);
+
+    // Set danger flag
+    await ghl.writeFieldsToContact(loc, contactId, {
+      'FF Danger Zone Active': 'true',
+    }, fieldDefs);
+
+    // Log note
+    await ghl.addContactNote(loc, contactId,
+      `Danger Zone activated - ${new Date().toISOString().split('T')[0]} - triggered by ${dangerTriggers.join('; ')}`);
+
+    // Create task in Coaching Dept
+    try {
+      await ghl.createTask(COACHING_DEPT_ID, mirrorId, {
+        title: `DANGER ZONE - ${client.name} - Score: ${total} - Reach out within 24 hours`,
+        dueDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        completed: false,
+      });
+    } catch (err) {
+      console.log(`  Warning: Could not create danger task - ${err.message}`);
+    }
+
+    // Trigger re-engagement workflow
+    if (REENGAGEMENT_WORKFLOW_ID) {
+      try {
+        await ghl.triggerWorkflow(loc, REENGAGEMENT_WORKFLOW_ID, contactId);
+        console.log('  Re-engagement workflow triggered');
+      } catch (err) {
+        console.log(`  Warning: Could not trigger workflow - ${err.message}`);
+      }
+    }
+  } else if (!dangerActive && wasDangerActive) {
+    // Clear danger zone
+    await ghl.removeContactTag(loc, contactId, ['FF-Danger']);
+    await ghl.writeFieldsToContact(loc, contactId, {
+      'FF Danger Zone Active': 'false',
+    }, fieldDefs);
+    await ghl.addContactNote(loc, contactId,
+      `Danger Zone cleared - ${new Date().toISOString().split('T')[0]} - Score: ${total}`);
+  }
+
+  // ─── Mirror Record Update (Coaching Dept) ───
+
+  if (mirrorId) {
+    const cdFieldDefs = await ghl.getCustomFields(COACHING_DEPT_ID);
+    const cdFields = cdFieldDefs.customFields || [];
+
+    const cycleNumber = readField('FF Current Cycle Number') || 1;
+    const daysUntilMilestone = readField('FF Days Until Next Milestone') || '';
+    const revenueTier = readField('FF Revenue Tier') || '';
+
+    await ghl.writeFieldsToContact(COACHING_DEPT_ID, mirrorId, {
+      'FF Health Score This Week': total,
+      'FF Health Score Last Week': lastWeekScore,
+      'FF Score Status': `${status.label} / ${status.description}`,
+      'FF Danger Zone Active': dangerActive ? 'true' : 'false',
+      'FF Current Cycle Number': cycleNumber,
+      'FF Days Until Next Milestone': daysUntilMilestone,
+      'FF Program': 'Freedom Formula',
+      'FF Revenue Tier': revenueTier,
+    }, cdFields);
+
+    // Mirror danger tag
+    if (dangerActive && !wasDangerActive) {
+      await ghl.addContactTag(COACHING_DEPT_ID, mirrorId, ['FF-Danger']);
+    } else if (!dangerActive && wasDangerActive) {
+      await ghl.removeContactTag(COACHING_DEPT_ID, mirrorId, ['FF-Danger']);
+    }
+
+    console.log('  Mirror record updated');
+  }
+
+  return {
+    name: client.name,
+    score: total,
+    lastWeekScore,
+    status,
+    dangerActive,
+    breakdown,
+  };
+}
+
+async function run() {
+  console.log('=== Freedom Formula Scoring Engine ===');
+  console.log(`Run time: ${new Date().toISOString()}`);
+
+  const clients = loadRegistry();
+  console.log(`Processing ${clients.length} Freedom Formula clients`);
+
+  if (clients.length === 0) {
+    console.log('No clients in registry. Exiting.');
+    return;
+  }
+
+  const results = [];
+
+  for (const client of clients) {
+    try {
+      const result = await scoreClient(client);
+      results.push(result);
+    } catch (err) {
+      console.error(`\nFAILED: ${client.name} - ${err.message}`);
+      results.push({
+        name: client.name,
+        score: null,
+        error: err.message,
+      });
+    }
+
+    // Rate limit between clients
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+
+  // Summary
+  console.log('\n=== Scoring Complete ===');
+  console.log(`Processed: ${results.length}`);
+  console.log(`Succeeded: ${results.filter((r) => r.score !== null).length}`);
+  console.log(`Failed: ${results.filter((r) => r.score === null).length}`);
+
+  for (const r of results) {
+    if (r.score !== null) {
+      console.log(`  ${r.name}: ${r.score}/100 (${r.status.label})`);
+    } else {
+      console.log(`  ${r.name}: FAILED - ${r.error}`);
+    }
+  }
+
+  // Save results with breakdowns for Monday delivery to read
+  const fs = require('fs');
+  const resultsPath = path.resolve(__dirname, '../setup/last-score-results.json');
+  const resultsData = {};
+  for (const r of results) {
+    if (r.score !== null) {
+      resultsData[r.name] = {
+        score: r.score,
+        lastWeekScore: r.lastWeekScore,
+        status: r.status,
+        dangerActive: r.dangerActive,
+        breakdown: r.breakdown,
+      };
+    }
+  }
+  fs.writeFileSync(resultsPath, JSON.stringify(resultsData, null, 2));
+  console.log(`Results saved to ${resultsPath}`);
+
+  return results;
+}
+
+// Allow direct execution or import
+if (require.main === module) {
+  run().catch((err) => {
+    console.error('Scoring engine failed:', err);
+    process.exit(1);
+  });
+}
+
+module.exports = { run };

@@ -12,6 +12,7 @@ const ghl = require('../utils/ghl-api');
 const googleAds = require('../utils/google-ads-api');
 const metaAds = require('../utils/meta-ads-api');
 const { calculateScore, getScoreStatus } = require('../utils/score-calculator');
+const { calculateBCScore, getBCScoreStatus } = require('../utils/bc-score-calculator');
 const { updateAllRollingAverages, getCustomFieldValue } = require('../utils/rolling-averages');
 
 const COACHING_DEPT_ID = process.env.COACHING_DEPT_LOCATION_ID;
@@ -21,7 +22,6 @@ function loadRegistry() {
   const registryPath = path.resolve(__dirname, '../setup/client-registry.json');
   delete require.cache[require.resolve(registryPath)];
   const registry = require(registryPath);
-  const clients = registry.clients.filter((c) => c.program === 'Freedom Formula' && c.ghl_location_id !== 'USMAN_FILLS_THIS');
 
   // Register each client's sub-account API key
   for (const client of registry.clients) {
@@ -30,7 +30,11 @@ function loadRegistry() {
     }
   }
 
-  return clients;
+  const validClients = registry.clients.filter((c) => c.ghl_location_id !== 'USMAN_FILLS_THIS');
+  const ffClients = validClients.filter((c) => c.program === 'Freedom Formula');
+  const bcClients = validClients.filter((c) => c.program === 'Black Circle');
+
+  return { ffClients, bcClients };
 }
 
 function getWeekDates() {
@@ -419,34 +423,344 @@ async function scoreClient(client) {
   };
 }
 
+async function scoreBCClient(client) {
+  const loc = client.ghl_location_id;
+  const contactId = client.ff_contact_id;
+  const mirrorId = client.coaching_dept_mirror_contact_id;
+  const week = getWeekDates();
+
+  console.log(`\nScoring (BC): ${client.name}`);
+  console.log(`  Location: ${loc} | Contact: ${contactId}`);
+
+  const fieldDefsResponse = await ghl.getCustomFields(loc);
+  const fieldDefs = fieldDefsResponse.customFields || [];
+
+  const contactResponse = await ghl.getContact(loc, contactId);
+  const readField = (name) => getCustomFieldValue(contactResponse, name, fieldDefs);
+
+  // ─── Pull Engagement Data ───
+
+  // Form submission check
+  const formSubmitted = readField('BC Strategic Initiative Status') || readField('FF Operational Control Rating');
+  const formSubmittedTimestamp = formSubmitted ? new Date().toISOString() : null;
+
+  // Coaching call disposition
+  let appointmentDisposition = null;
+  try {
+    const calData = await ghl.getCalendars(loc);
+    const calendars = calData.calendars || [];
+    for (const cal of calendars) {
+      try {
+        const appointments = await ghl.getAppointments(loc, {
+          calendarId: cal.id,
+          startTime: week.start.toISOString(),
+          endTime: week.end.toISOString(),
+        });
+        if (appointments.events && appointments.events.length > 0) {
+          for (const appt of appointments.events) {
+            if (appt.contactId === contactId || appt.contact_id === contactId) {
+              appointmentDisposition = appt.appointmentStatus || appt.status || null;
+            }
+          }
+        }
+      } catch (calErr) { /* skip */ }
+    }
+  } catch (err) {
+    console.log(`  Warning: Could not fetch appointments - ${err.message}`);
+  }
+
+  // Peer contribution (Q11 from form — "Who did you help this week?")
+  const peerContributionResponse = readField('BC Peer Contribution') || '';
+
+  // ─── Pull Leadership Data ───
+
+  const initiativeStatus = readField('BC Strategic Initiative Status');
+  const teamDevelopmentRating = readField('BC Team Development Rating');
+  const ceoHoursThisWeek = readField('BC CEO Hours This Week');
+
+  // ─── Pull Financial Data ───
+
+  const weeklyRevenue = parseFloat(readField('FF Weekly Revenue') || 0);
+  const revenueTarget = parseFloat(readField('BC Weekly Revenue Target') || 0);
+  const profitMarginThisWeek = parseFloat(readField('BC Profit Margin This Week') || 0);
+  const memberRetentionRate = parseFloat(readField('BC Member Retention Rate') || 0);
+
+  // Google Ads data
+  let googleLeads = 0;
+  let googleSpend = 0;
+  if (client.google_ads_customer_id && client.google_ads_customer_id !== 'USMAN_FILLS_THIS') {
+    const gResult = await googleAds.getWeeklyLeadsAndSpend(
+      client.google_ads_customer_id, week.startStr, week.endStr
+    );
+    if (gResult) {
+      googleLeads = gResult.leads;
+      googleSpend = gResult.spend;
+    }
+  }
+
+  // Meta Ads data
+  let metaLeads = 0;
+  let metaSpend = 0;
+  if (client.meta_ad_account_id && client.meta_ad_account_id !== 'USMAN_FILLS_THIS') {
+    const mResult = await metaAds.getWeeklyLeadsAndSpend(
+      client.meta_ad_account_id, week.startStr, week.endStr
+    );
+    if (mResult) {
+      metaLeads = mResult.leads;
+      metaSpend = mResult.spend;
+    }
+  }
+
+  const totalWeeklyLeads = googleLeads + metaLeads;
+  const weeklyNewMembers = parseFloat(readField('FF Weekly New Members') || 0);
+  const conversionRate = totalWeeklyLeads > 0 ? (weeklyNewMembers / totalWeeklyLeads) * 100 : 0;
+
+  // Write weekly metrics
+  await ghl.writeFieldsToContact(loc, contactId, {
+    'FF Weekly Leads': totalWeeklyLeads,
+  }, fieldDefs);
+
+  // ─── Update Rolling Averages ───
+
+  const blendedCPL = totalWeeklyLeads > 0 ? (googleSpend + metaSpend) / totalWeeklyLeads : 0;
+  const averages = await updateAllRollingAverages(loc, contactId, {
+    revenue: weeklyRevenue,
+    leads: totalWeeklyLeads,
+    conversionRate: conversionRate,
+    blendedCPL: blendedCPL,
+  }, fieldDefs);
+
+  // BC-specific: profit margin rolling average
+  const priorProfitAvg = parseFloat(readField('BC Profit Margin 4-Week Avg') || 0);
+  const newProfitAvg = priorProfitAvg === 0 ? profitMarginThisWeek :
+    Math.round(((priorProfitAvg * 3 + profitMarginThisWeek) / 4) * 100) / 100;
+  await ghl.writeFieldsToContact(loc, contactId, {
+    'BC Profit Margin 4-Week Avg': newProfitAvg,
+  }, fieldDefs);
+
+  // ─── Consecutive Misses ───
+
+  let consecutiveMissedForms = parseInt(readField('FF Consecutive Missed Forms') || 0);
+  let consecutiveMissedCalls = parseInt(readField('FF Consecutive Missed Calls') || 0);
+
+  if (!formSubmitted) {
+    consecutiveMissedForms++;
+  } else {
+    consecutiveMissedForms = 0;
+  }
+
+  if (!appointmentDisposition || appointmentDisposition === 'no_show' || appointmentDisposition === 'cancelled') {
+    consecutiveMissedCalls++;
+  } else if (appointmentDisposition === 'attended' || appointmentDisposition === 'completed' || appointmentDisposition === 'showed') {
+    consecutiveMissedCalls = 0;
+  }
+
+  await ghl.writeFieldsToContact(loc, contactId, {
+    'FF Consecutive Missed Forms': consecutiveMissedForms,
+    'FF Consecutive Missed Calls': consecutiveMissedCalls,
+  }, fieldDefs);
+
+  // Track weeks under revenue target
+  let weeksUnderRevenueTarget = parseInt(readField('BC Weeks Under Revenue Target') || 0);
+  if (revenueTarget > 0 && weeklyRevenue < revenueTarget) {
+    weeksUnderRevenueTarget++;
+  } else {
+    weeksUnderRevenueTarget = 0;
+  }
+  await ghl.writeFieldsToContact(loc, contactId, {
+    'BC Weeks Under Revenue Target': weeksUnderRevenueTarget,
+  }, fieldDefs);
+
+  // ─── Calculate Score ───
+
+  const lastWeekScore = parseFloat(readField('FF Health Score This Week') || 0);
+
+  const scoreData = {
+    formSubmittedTimestamp,
+    scoringWindowEnd: week.end.toISOString(),
+    appointmentDisposition,
+    peerContributionResponse,
+    initiativeStatus,
+    teamDevelopmentRating: parseFloat(teamDevelopmentRating || 0),
+    ceoHoursThisWeek: parseFloat(ceoHoursThisWeek || 0),
+    weeklyRevenue,
+    revenueTarget,
+    profitMarginThisWeek,
+    profitMargin4WeekAvg: newProfitAvg,
+    weeklyLeads: totalWeeklyLeads,
+    leadVolume4WeekAvg: averages.leadVolume4WeekAvg || parseFloat(readField('FF Lead Volume 4-Week Avg') || 0),
+    conversionRateThisWeek: conversionRate,
+    conversionRate4WeekAvg: averages.conversionRate4WeekAvg || parseFloat(readField('FF Conversion Rate 4-Week Avg') || 0),
+    memberRetentionRate,
+    lastWeekScore,
+    consecutiveMissedForms,
+    consecutiveMissedCalls,
+    weeksUnderRevenueTarget,
+  };
+
+  let { total, breakdown, dangerTriggers } = calculateBCScore(scoreData);
+
+  // ─── Override Logic ───
+
+  const overrideNote = readField('FF Score Override Note');
+  if (overrideNote && overrideNote.trim() !== '') {
+    const overrideMatch = overrideNote.match(/(-?\d+)/);
+    if (overrideMatch) {
+      const adjustment = parseInt(overrideMatch[1]);
+      if (adjustment < 0) {
+        total = Math.max(0, total + adjustment);
+        await ghl.addContactNote(loc, contactId,
+          `BC Score override applied: ${adjustment} points. Note: ${overrideNote}. Final score: ${total}`);
+      }
+    }
+    await ghl.writeFieldsToContact(loc, contactId, {
+      'FF Score Override Note': '',
+    }, fieldDefs);
+  }
+
+  total = Math.min(100, Math.max(0, total));
+  const status = getBCScoreStatus(total);
+
+  console.log(`  Score: ${total}/100 (${status.label} - ${status.description})`);
+  console.log(`  Breakdown:`, JSON.stringify(breakdown));
+
+  // ─── Write Score to Client Sub-Account ───
+
+  await ghl.writeFieldsToContact(loc, contactId, {
+    'FF Health Score Last Week': lastWeekScore,
+    'FF Health Score This Week': total,
+    'FF Score Status': `${status.label} / ${status.description}`,
+  }, fieldDefs);
+
+  // ─── Danger Zone Logic ───
+
+  const dangerActive = dangerTriggers.length > 0;
+  const wasDangerActive = readField('FF Danger Zone Active') === 'true';
+
+  if (dangerActive && !wasDangerActive) {
+    console.log(`  DANGER ZONE ACTIVATED: ${dangerTriggers.join(', ')}`);
+    await ghl.addContactTag(loc, contactId, ['BC-Danger']);
+    await ghl.writeFieldsToContact(loc, contactId, {
+      'FF Danger Zone Active': 'true',
+    }, fieldDefs);
+    await ghl.addContactNote(loc, contactId,
+      `Black Circle Danger Zone activated - ${new Date().toISOString().split('T')[0]} - triggered by ${dangerTriggers.join('; ')}`);
+
+    try {
+      await ghl.createTask(COACHING_DEPT_ID, mirrorId, {
+        title: `BC DANGER ZONE - ${client.name} - Score: ${total} - Reach out within 24 hours`,
+        dueDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        completed: false,
+      });
+    } catch (err) {
+      console.log(`  Warning: Could not create danger task - ${err.message}`);
+    }
+
+    if (REENGAGEMENT_WORKFLOW_ID) {
+      try {
+        await ghl.triggerWorkflow(loc, REENGAGEMENT_WORKFLOW_ID, contactId);
+        console.log('  Re-engagement workflow triggered');
+      } catch (err) {
+        console.log(`  Warning: Could not trigger workflow - ${err.message}`);
+      }
+    }
+  } else if (!dangerActive && wasDangerActive) {
+    await ghl.removeContactTag(loc, contactId, ['BC-Danger']);
+    await ghl.writeFieldsToContact(loc, contactId, {
+      'FF Danger Zone Active': 'false',
+    }, fieldDefs);
+    await ghl.addContactNote(loc, contactId,
+      `Black Circle Danger Zone cleared - ${new Date().toISOString().split('T')[0]} - Score: ${total}`);
+  }
+
+  // ─── Mirror Record Update (Coaching Dept) ───
+
+  if (mirrorId) {
+    const cdFieldDefs = await ghl.getCustomFields(COACHING_DEPT_ID);
+    const cdFields = cdFieldDefs.customFields || [];
+
+    const cycleNumber = readField('FF Current Cycle Number') || 1;
+    const daysUntilMilestone = readField('FF Days Until Next Milestone') || '';
+    const revenueTier = readField('FF Revenue Tier') || '';
+
+    await ghl.writeFieldsToContact(COACHING_DEPT_ID, mirrorId, {
+      'FF Health Score This Week': total,
+      'FF Health Score Last Week': lastWeekScore,
+      'FF Score Status': `${status.label} / ${status.description}`,
+      'FF Danger Zone Active': dangerActive ? 'true' : 'false',
+      'FF Current Cycle Number': cycleNumber,
+      'FF Days Until Next Milestone': daysUntilMilestone,
+      'FF Program': 'Black Circle',
+      'FF Revenue Tier': revenueTier,
+    }, cdFields);
+
+    if (dangerActive && !wasDangerActive) {
+      await ghl.addContactTag(COACHING_DEPT_ID, mirrorId, ['BC-Danger']);
+    } else if (!dangerActive && wasDangerActive) {
+      await ghl.removeContactTag(COACHING_DEPT_ID, mirrorId, ['BC-Danger']);
+    }
+
+    console.log('  Mirror record updated');
+  }
+
+  return {
+    name: client.name,
+    program: 'Black Circle',
+    score: total,
+    lastWeekScore,
+    status,
+    dangerActive,
+    breakdown,
+  };
+}
+
 async function run() {
   console.log('=== Freedom Formula Scoring Engine ===');
   console.log(`Run time: ${new Date().toISOString()}`);
 
-  const clients = loadRegistry();
-  console.log(`Processing ${clients.length} Freedom Formula clients`);
+  const { ffClients, bcClients } = loadRegistry();
+  console.log(`Processing ${ffClients.length} Freedom Formula clients`);
+  console.log(`Processing ${bcClients.length} Black Circle clients`);
 
-  if (clients.length === 0) {
+  if (ffClients.length === 0 && bcClients.length === 0) {
     console.log('No clients in registry. Exiting.');
     return;
   }
 
   const results = [];
 
-  for (const client of clients) {
+  // Score Freedom Formula clients
+  for (const client of ffClients) {
     try {
       const result = await scoreClient(client);
+      result.program = 'Freedom Formula';
       results.push(result);
     } catch (err) {
       console.error(`\nFAILED: ${client.name} - ${err.message}`);
       results.push({
         name: client.name,
+        program: 'Freedom Formula',
         score: null,
         error: err.message,
       });
     }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
 
-    // Rate limit between clients
+  // Score Black Circle clients
+  for (const client of bcClients) {
+    try {
+      const result = await scoreBCClient(client);
+      results.push(result);
+    } catch (err) {
+      console.error(`\nFAILED (BC): ${client.name} - ${err.message}`);
+      results.push({
+        name: client.name,
+        program: 'Black Circle',
+        score: null,
+        error: err.message,
+      });
+    }
     await new Promise((r) => setTimeout(r, 1000));
   }
 
@@ -457,10 +771,11 @@ async function run() {
   console.log(`Failed: ${results.filter((r) => r.score === null).length}`);
 
   for (const r of results) {
+    const tag = r.program === 'Black Circle' ? '[BC]' : '[FF]';
     if (r.score !== null) {
-      console.log(`  ${r.name}: ${r.score}/100 (${r.status.label})`);
+      console.log(`  ${tag} ${r.name}: ${r.score}/100 (${r.status.label})`);
     } else {
-      console.log(`  ${r.name}: FAILED - ${r.error}`);
+      console.log(`  ${tag} ${r.name}: FAILED - ${r.error}`);
     }
   }
 

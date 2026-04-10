@@ -11,6 +11,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const ghl = require('../utils/ghl-api');
 const { getScoreStatus } = require('../utils/score-calculator');
+const { getBCScoreStatus } = require('../utils/bc-score-calculator');
 const { getCustomFieldValue } = require('../utils/rolling-averages');
 
 const COACHING_DEPT_ID = process.env.COACHING_DEPT_LOCATION_ID;
@@ -30,7 +31,7 @@ function loadRegistry() {
     }
   }
 
-  return registry.clients.filter((c) => c.program === 'Freedom Formula' && c.ghl_location_id !== 'USMAN_FILLS_THIS');
+  return registry.clients.filter((c) => c.ghl_location_id !== 'USMAN_FILLS_THIS');
 }
 
 function loadTemplate(name) {
@@ -224,7 +225,7 @@ async function sendInternalSummary(clientResults) {
 
     return buildClientRow({
       name: r.name,
-      program: 'FF',
+      program: r.program === 'Black Circle' ? 'BC' : 'FF',
       score: r.score || 0,
       status,
       change,
@@ -301,7 +302,7 @@ async function run() {
       const lastWeekScore = parseFloat(getCustomFieldValue(mirrorData, 'FF Health Score Last Week', cdFieldDefs) || 0);
       const dangerActive = getCustomFieldValue(mirrorData, 'FF Danger Zone Active', cdFieldDefs) === 'true';
       const daysUntilMilestone = getCustomFieldValue(mirrorData, 'FF Days Until Next Milestone', cdFieldDefs);
-      const status = getScoreStatus(score);
+      const status = client.program === 'Black Circle' ? getBCScoreStatus(score) : getScoreStatus(score);
 
       // Load breakdown from last scoring run
       let breakdown = {};
@@ -322,6 +323,7 @@ async function run() {
 
       clientResults.push({
         name: client.name,
+        program: client.program,
         score,
         lastWeekScore,
         status,
@@ -335,6 +337,7 @@ async function run() {
       console.error(`  FAILED: ${client.name} - ${err.message}`);
       clientResults.push({
         name: client.name,
+        program: client.program,
         score: 0,
         lastWeekScore: 0,
         status: getScoreStatus(0),

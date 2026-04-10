@@ -79,6 +79,17 @@ const CUSTOM_FIELDS = [
 
   // ─── Program ───
   { name: 'FF Program', dataType: 'TEXT', position: 28 },
+
+  // ─── Black Circle Fields ───
+  { name: 'BC Strategic Initiative Status', dataType: 'TEXT', position: 30 },
+  { name: 'BC Team Development Rating', dataType: 'NUMERICAL', position: 31 },
+  { name: 'BC CEO Hours This Week', dataType: 'NUMERICAL', position: 32 },
+  { name: 'BC Weekly Revenue Target', dataType: 'NUMERICAL', position: 33 },
+  { name: 'BC Profit Margin This Week', dataType: 'NUMERICAL', position: 34 },
+  { name: 'BC Profit Margin 4-Week Avg', dataType: 'NUMERICAL', position: 35 },
+  { name: 'BC Member Retention Rate', dataType: 'NUMERICAL', position: 36 },
+  { name: 'BC Peer Contribution', dataType: 'TEXT', position: 37 },
+  { name: 'BC Weeks Under Revenue Target', dataType: 'NUMERICAL', position: 38 },
 ];
 
 async function main() {

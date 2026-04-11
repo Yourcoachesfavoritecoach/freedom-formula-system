@@ -14,6 +14,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 const scoringEngine = require('./scoring-engine');
 const mondayDelivery = require('./monday-delivery');
 const milestoneCheck = require('./milestone-check');
+const nightlyRefresh = require('./nightly-refresh');
 
 // Start the API server alongside cron jobs (handles webhooks + form submissions)
 require('../api/server');
@@ -23,6 +24,7 @@ console.log(`Started at: ${new Date().toISOString()}`);
 console.log('');
 console.log('Scheduled jobs:');
 console.log('  Scoring Engine:  Every Sunday at 11:00pm');
+console.log('  Nightly Refresh: Mon-Sat at 11:00pm');
 console.log('  Monday Delivery: Every Monday at 7:00am');
 console.log('  Milestone Check: Every day at 8:00am');
 console.log('  API Server:      Running on port ' + (process.env.FORM_PORT || 3000));
@@ -45,6 +47,16 @@ cron.schedule('0 7 * * 1', async () => {
     await mondayDelivery.run();
   } catch (err) {
     console.error('Monday delivery error:', err);
+  }
+}, { timezone: 'America/New_York' });
+
+// Nightly Refresh — Mon-Sat 11:00pm (Sunday is handled by full scoring engine)
+cron.schedule('0 23 * * 1-6', async () => {
+  console.log(`\n[${new Date().toISOString()}] Nightly refresh triggered`);
+  try {
+    await nightlyRefresh.run();
+  } catch (err) {
+    console.error('Nightly refresh error:', err);
   }
 }, { timezone: 'America/New_York' });
 

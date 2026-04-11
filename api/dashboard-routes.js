@@ -387,6 +387,159 @@ router.get('/checkins/:clientName', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/dashboard/digest
+ * Returns a "What Changed" daily digest comparing today's data to yesterday's.
+ * Shows score changes, new danger flags, metric shifts, and missed check-ins.
+ */
+router.get('/digest', (req, res) => {
+  try {
+    const snapshotPath = path.resolve(__dirname, '../setup/daily-snapshots.json');
+    if (!fs.existsSync(snapshotPath)) {
+      return res.json({ digest: null, message: 'No daily snapshots yet. Data will appear after the first nightly refresh.' });
+    }
+
+    const snapshots = JSON.parse(fs.readFileSync(snapshotPath, 'utf8'));
+    if (snapshots.length < 2) {
+      // Only one snapshot - show current state but no comparison
+      const latest = snapshots[snapshots.length - 1];
+      return res.json({
+        digest: {
+          date: latest.date,
+          hasComparison: false,
+          clients: Object.entries(latest.clients).map(([name, data]) => ({
+            name,
+            score: data.score,
+            status: data.status,
+            dangerActive: data.dangerActive,
+          })),
+        },
+        message: 'First snapshot recorded. Comparison will be available after the next nightly refresh.',
+      });
+    }
+
+    const today = snapshots[snapshots.length - 1];
+    const yesterday = snapshots[snapshots.length - 2];
+
+    const changes = [];
+
+    // Compare each client
+    for (const [name, todayData] of Object.entries(today.clients)) {
+      const yesterdayData = yesterday.clients[name];
+      const change = {
+        name,
+        currentScore: todayData.score,
+        currentStatus: todayData.status,
+        dangerActive: todayData.dangerActive,
+        changes: [],
+      };
+
+      if (!yesterdayData) {
+        change.changes.push({ type: 'new', message: 'New client added' });
+      } else {
+        // Score change
+        const scoreDiff = todayData.score - yesterdayData.score;
+        if (scoreDiff !== 0) {
+          change.previousScore = yesterdayData.score;
+          change.scoreDiff = scoreDiff;
+          change.changes.push({
+            type: scoreDiff > 0 ? 'improved' : 'declined',
+            message: `Score ${scoreDiff > 0 ? 'up' : 'down'} ${Math.abs(scoreDiff)} points (${yesterdayData.score} → ${todayData.score})`,
+          });
+        }
+
+        // Status change
+        if (todayData.status !== yesterdayData.status) {
+          change.previousStatus = yesterdayData.status;
+          change.changes.push({
+            type: 'status_change',
+            message: `Status changed: ${yesterdayData.status} → ${todayData.status}`,
+          });
+        }
+
+        // Entered danger zone
+        if (todayData.dangerActive && !yesterdayData.dangerActive) {
+          change.changes.push({
+            type: 'danger_entered',
+            message: 'Entered Danger Zone',
+          });
+        }
+
+        // Exited danger zone
+        if (!todayData.dangerActive && yesterdayData.dangerActive) {
+          change.changes.push({
+            type: 'danger_exited',
+            message: 'Exited Danger Zone',
+          });
+        }
+
+        // Check individual metric changes (breakdown)
+        if (todayData.breakdown && yesterdayData.breakdown) {
+          const metricNames = {
+            formSubmission: 'Weekly Check-In',
+            coachingCall: 'Coaching Call',
+            outreachResponse: 'Response Time',
+            orgChart: 'Org Chart',
+            weeklyKPIs: 'KPI Completeness',
+            revenue: 'Revenue',
+            leadVolume: 'Lead Volume',
+            conversionRate: 'Conversion Rate',
+          };
+
+          for (const [key, label] of Object.entries(metricNames)) {
+            const todayVal = todayData.breakdown[key] || 0;
+            const yesterdayVal = yesterdayData.breakdown[key] || 0;
+            const diff = todayVal - yesterdayVal;
+            if (Math.abs(diff) >= 2) {
+              change.changes.push({
+                type: diff > 0 ? 'metric_up' : 'metric_down',
+                metric: label,
+                message: `${label}: ${diff > 0 ? '+' : ''}${diff} points`,
+              });
+            }
+          }
+        }
+      }
+
+      // Only include clients that have changes or are in danger
+      if (change.changes.length > 0 || change.dangerActive) {
+        changes.push(change);
+      }
+    }
+
+    // Check for clients that were removed
+    for (const name of Object.keys(yesterday.clients)) {
+      if (!today.clients[name]) {
+        changes.push({
+          name,
+          changes: [{ type: 'removed', message: 'Client no longer in system' }],
+        });
+      }
+    }
+
+    // Sort: danger first, then by most changes, then by score diff
+    changes.sort((a, b) => {
+      if (a.dangerActive && !b.dangerActive) return -1;
+      if (!a.dangerActive && b.dangerActive) return 1;
+      return (b.changes?.length || 0) - (a.changes?.length || 0);
+    });
+
+    res.json({
+      digest: {
+        date: today.date,
+        previousDate: yesterday.date,
+        hasComparison: true,
+        totalClients: Object.keys(today.clients).length,
+        clientsWithChanges: changes.filter(c => c.changes.length > 0).length,
+        dangerCount: Object.values(today.clients).filter(c => c.dangerActive).length,
+        changes,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to build digest: ' + err.message });
+  }
+});
+
 // ─── Coach Actions helpers ───
 
 const ACTIONS_PATH = path.resolve(__dirname, '../setup/coach-actions.json');

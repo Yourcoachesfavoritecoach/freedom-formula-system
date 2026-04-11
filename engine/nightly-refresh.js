@@ -11,6 +11,7 @@ const fs = require('fs');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const ghl = require('../utils/ghl-api');
+const base44 = require('../utils/base44-api');
 const { getCustomFieldValue } = require('../utils/rolling-averages');
 const log = require('../utils/logger');
 const runLock = require('../utils/run-lock');
@@ -76,6 +77,8 @@ async function _runRefresh() {
 
     try {
       const contactResponse = await ghl.getContact(COACHING_DEPT_ID, mirrorId);
+      const mirrorContact = contactResponse.contact || contactResponse;
+      const clientEmail = mirrorContact.email || '';
       const readField = (name) => getCustomFieldValue(contactResponse, name, cdFields);
 
       const score = parseFloat(readField('FF Health Score This Week') || 0);
@@ -112,6 +115,7 @@ async function _runRefresh() {
       };
 
       resultsData[client.name] = {
+        email: clientEmail,
         score,
         lastWeekScore,
         status: { label: statusLabel, description: statusDescription, color: statusColor },
@@ -135,6 +139,28 @@ async function _runRefresh() {
   const resultsPath = path.resolve(__dirname, '../setup/last-score-results.json');
   fs.writeFileSync(resultsPath, JSON.stringify(resultsData, null, 2));
   console.log(`\nResults saved: ${successCount} succeeded, ${failCount} failed`);
+
+  // Push refreshed scores to Base44
+  const today = new Date().toISOString().split('T')[0];
+  for (const [name, data] of Object.entries(resultsData)) {
+    if (!data.email) continue;
+    try {
+      await base44.pushClientScore(data.email, today, {
+        client_name: name,
+        program: data.program || '',
+        score: data.score,
+        last_week_score: data.lastWeekScore || 0,
+        status_label: data.status?.label || '',
+        status_description: data.status?.description || '',
+        status_color: data.status?.color || '',
+        danger_active: data.dangerActive || false,
+        breakdown: data.breakdown || {},
+      });
+    } catch (b44Err) {
+      console.log(`  Base44 push failed for ${name}: ${b44Err.message}`);
+    }
+  }
+  console.log('Base44 score push complete');
 
   // Save daily snapshot for "What Changed" digest
   await saveDailySnapshot(resultsData);

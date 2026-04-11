@@ -11,6 +11,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 
 const ghl = require('../utils/ghl-api');
+const base44 = require('../utils/base44-api');
 const googleAds = require('../utils/google-ads-api');
 const metaAds = require('../utils/meta-ads-api');
 const { getCustomFieldValue } = require('../utils/rolling-averages');
@@ -613,6 +614,18 @@ router.post('/actions/:clientName', (req, res) => {
     actions.push(entry);
     saveActions(actions);
 
+    // Push to Base44 (non-blocking)
+    base44.pushClientAction(entry.id, {
+      client_name: clientName,
+      coach_name: coachName,
+      action_text: action,
+      action_type: type,
+      assigned_to: assignedTo || '',
+      assignment_reason: assignmentReason || '',
+      created_at: entry.timestamp,
+      completed: false,
+    }).catch(() => {});
+
     res.json({ success: true, entry });
   } catch (err) {
     res.status(500).json({ error: 'Failed to save action: ' + err.message });
@@ -643,6 +656,21 @@ router.put('/actions/:actionId', (req, res) => {
     actions[idx].updatedAt = new Date().toISOString();
 
     saveActions(actions);
+
+    // Push update to Base44 (non-blocking)
+    const a = actions[idx];
+    base44.pushClientAction(a.id, {
+      client_name: a.clientName,
+      coach_name: a.coachName,
+      action_text: a.action,
+      action_type: a.type,
+      assigned_to: a.assignedTo || '',
+      assignment_reason: a.assignmentReason || '',
+      created_at: a.timestamp,
+      completed: a.completed || false,
+      updated_at: a.updatedAt,
+    }).catch(() => {});
+
     res.json({ success: true, entry: actions[idx] });
   } catch (err) {
     res.status(500).json({ error: 'Failed to update action: ' + err.message });

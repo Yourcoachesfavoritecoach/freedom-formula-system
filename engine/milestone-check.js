@@ -10,6 +10,7 @@ const fs = require('fs');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const ghl = require('../utils/ghl-api');
+const base44 = require('../utils/base44-api');
 const { getScoreStatus } = require('../utils/score-calculator');
 const { getCustomFieldValue } = require('../utils/rolling-averages');
 const { onboardNewClients } = require('./onboard-client');
@@ -164,6 +165,16 @@ async function handle30Day(client, fieldDefs, cdFieldDefs) {
   } catch (err) {
     console.log(`  Warning: Could not update pipeline stage - ${err.message}`);
   }
+
+  // Push milestone to Base44
+  const cycleNum = parseInt(getCustomFieldValue(await ghl.getContact(loc, client.ff_contact_id), 'FF Current Cycle Number', fieldDefs) || 1);
+  await base44.pushClientMilestone(contact.email, '30-day', cycleNum, {
+    client_name: client.name,
+    milestone_date: todayStr(),
+    score_at_milestone: score,
+    status_label: status.label,
+    description: '30-Day Foundation Review',
+  });
 }
 
 async function handle60Day(client, fieldDefs, cdFieldDefs) {
@@ -241,6 +252,17 @@ async function handle60Day(client, fieldDefs, cdFieldDefs) {
   } catch (err) {
     console.log(`  Warning: Could not update pipeline stage - ${err.message}`);
   }
+
+  // Push milestone to Base44
+  const cycleNum = parseInt(getCustomFieldValue(contactData, 'FF Current Cycle Number', fieldDefs) || 1);
+  await base44.pushClientMilestone(contact.email, '60-day', cycleNum, {
+    client_name: client.name,
+    milestone_date: todayStr(),
+    score_at_milestone: score,
+    status_label: status.label,
+    danger_triggered: score < 60 && lastWeekScore < 60 && !dangerActive,
+    description: '60-Day Upgrade/Intervention Review',
+  });
 }
 
 async function handle90Day(client, fieldDefs, cdFieldDefs) {
@@ -439,6 +461,17 @@ async function handle90Day(client, fieldDefs, cdFieldDefs) {
     await ghl.addContactNote(loc, client.ff_contact_id,
       `Renewed to Cycle ${newCycleNumber} - ${todayStr()}\nUpgrade criteria not met:\n${upgrade.details.join('\n')}`);
   }
+
+  // Push milestone to Base44
+  await base44.pushClientMilestone(contact.email, '90-day', cycleNumber, {
+    client_name: client.name,
+    milestone_date: todayStr(),
+    score_at_milestone: score,
+    status_label: status.label,
+    upgrade_eligible: upgrade.allMet,
+    upgrade_details: upgrade.details,
+    description: upgrade.allMet ? '90-Day Review - Upgrade Eligible' : `90-Day Review - Renewed to Cycle ${cycleNumber + 1}`,
+  });
 }
 
 // ─── Main Runner ───

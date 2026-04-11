@@ -1,6 +1,7 @@
 /**
  * Base44 API Utility
  * Creates and updates entity records in the Coaching Dept. Library app.
+ * Supports UserProfile (intake) + generic entity CRUD for companion app data.
  */
 
 const https = require('https');
@@ -44,35 +45,134 @@ function makeRequest(method, entityUrl, body) {
   });
 }
 
+// ─── Generic Entity CRUD ───
+
 /**
- * Search for a UserProfile by email.
- * Returns the record if found, null otherwise.
+ * Find records in any entity by filter object.
+ * Returns array of matching records.
  */
-async function findUserProfileByEmail(email) {
-  const url = `${BASE44_BASE_URL}/UserProfile?filter=${encodeURIComponent(JSON.stringify({ email }))}`;
+async function findEntity(entityName, filter) {
+  const url = `${BASE44_BASE_URL}/${entityName}?filter=${encodeURIComponent(JSON.stringify(filter))}`;
   const results = await makeRequest('GET', url);
-  const records = Array.isArray(results) ? results : (results.results || []);
+  return Array.isArray(results) ? results : (results.results || []);
+}
+
+/**
+ * Create a record in any entity.
+ */
+async function createEntity(entityName, data) {
+  return makeRequest('POST', `${BASE44_BASE_URL}/${entityName}`, data);
+}
+
+/**
+ * Update a record in any entity by ID.
+ */
+async function updateEntity(entityName, id, data) {
+  return makeRequest('PUT', `${BASE44_BASE_URL}/${entityName}/${id}`, data);
+}
+
+/**
+ * Upsert a record by composite filter.
+ * If a record matching the filter exists, update it. Otherwise create.
+ * Returns { id, created }.
+ */
+async function upsertEntity(entityName, filter, data) {
+  const existing = await findEntity(entityName, filter);
+  if (existing.length > 0) {
+    const id = existing[0].id || existing[0]._id;
+    await updateEntity(entityName, id, data);
+    return { id, created: false };
+  }
+  const created = await createEntity(entityName, { ...filter, ...data });
+  return { id: created.id || created._id, created: true };
+}
+
+// ─── Push Convenience Wrappers (non-critical — log and swallow errors) ───
+
+/**
+ * Push a ClientScore record for a client week.
+ * Upserts by client_email + week_date.
+ */
+async function pushClientScore(email, weekDate, scoreData) {
+  try {
+    return await upsertEntity('ClientScore', { client_email: email, week_date: weekDate }, scoreData);
+  } catch (err) {
+    console.log(`Base44: ClientScore push failed for ${email}: ${err.message}`);
+    return null;
+  }
+}
+
+/**
+ * Push a ClientMetric record for a client week.
+ * Upserts by client_email + week_date.
+ */
+async function pushClientMetric(email, weekDate, metricData) {
+  try {
+    return await upsertEntity('ClientMetric', { client_email: email, week_date: weekDate }, metricData);
+  } catch (err) {
+    console.log(`Base44: ClientMetric push failed for ${email}: ${err.message}`);
+    return null;
+  }
+}
+
+/**
+ * Push a ClientAction record.
+ * Upserts by action_id.
+ */
+async function pushClientAction(actionId, actionData) {
+  try {
+    return await upsertEntity('ClientAction', { action_id: actionId }, actionData);
+  } catch (err) {
+    console.log(`Base44: ClientAction push failed for ${actionId}: ${err.message}`);
+    return null;
+  }
+}
+
+/**
+ * Push a ClientMilestone record.
+ * Upserts by client_email + milestone_type + cycle_number.
+ */
+async function pushClientMilestone(email, milestoneType, cycleNumber, milestoneData) {
+  try {
+    return await upsertEntity('ClientMilestone', {
+      client_email: email,
+      milestone_type: milestoneType,
+      cycle_number: cycleNumber,
+    }, milestoneData);
+  } catch (err) {
+    console.log(`Base44: ClientMilestone push failed for ${email}: ${err.message}`);
+    return null;
+  }
+}
+
+/**
+ * Push a ClientSchedule record.
+ * Upserts by client_email + event_id.
+ */
+async function pushClientSchedule(email, eventId, scheduleData) {
+  try {
+    return await upsertEntity('ClientSchedule', { client_email: email, event_id: eventId }, scheduleData);
+  } catch (err) {
+    console.log(`Base44: ClientSchedule push failed for ${email}: ${err.message}`);
+    return null;
+  }
+}
+
+// ─── UserProfile (legacy convenience wrappers) ───
+
+async function findUserProfileByEmail(email) {
+  const records = await findEntity('UserProfile', { email });
   return records.length > 0 ? records[0] : null;
 }
 
-/**
- * Create a new UserProfile record.
- */
 async function createUserProfile(data) {
-  return makeRequest('POST', `${BASE44_BASE_URL}/UserProfile`, data);
+  return createEntity('UserProfile', data);
 }
 
-/**
- * Update an existing UserProfile record by ID.
- */
 async function updateUserProfile(id, data) {
-  return makeRequest('PUT', `${BASE44_BASE_URL}/UserProfile/${id}`, data);
+  return updateEntity('UserProfile', id, data);
 }
 
-/**
- * Create or update a UserProfile by email.
- * Returns { id, created } where created=true if new record.
- */
 async function upsertUserProfile(email, data) {
   const existing = await findUserProfileByEmail(email);
   if (existing) {
@@ -85,6 +185,18 @@ async function upsertUserProfile(email, data) {
 }
 
 module.exports = {
+  // Generic CRUD
+  findEntity,
+  createEntity,
+  updateEntity,
+  upsertEntity,
+  // Push wrappers
+  pushClientScore,
+  pushClientMetric,
+  pushClientAction,
+  pushClientMilestone,
+  pushClientSchedule,
+  // UserProfile
   findUserProfileByEmail,
   createUserProfile,
   updateUserProfile,

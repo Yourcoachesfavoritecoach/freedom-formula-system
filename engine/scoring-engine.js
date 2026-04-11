@@ -17,6 +17,7 @@ const { calculateBCScore, getBCScoreStatus } = require('../utils/bc-score-calcul
 const { updateAllRollingAverages, getCustomFieldValue } = require('../utils/rolling-averages');
 const { ALL_FIELDS, FF_FIELDS, BC_FIELDS } = require('../utils/field-definitions');
 const { onboardNewClients } = require('./onboard-client');
+const base44 = require('../utils/base44-api');
 const log = require('../utils/logger');
 const runLock = require('../utils/run-lock');
 
@@ -116,6 +117,7 @@ async function scoreClient(client) {
   // Load contact data
   const contactResponse = await ghl.getContact(loc, contactId);
   const contact = contactResponse.contact || contactResponse;
+  const clientEmail = contact.email || '';
 
   // Helper to read fields
   const readField = (name) => getCustomFieldValue(contactResponse, name, fieldDefs);
@@ -459,6 +461,7 @@ async function scoreClient(client) {
 
   return {
     name: client.name,
+    email: clientEmail,
     score: total,
     lastWeekScore,
     status,
@@ -496,6 +499,8 @@ async function scoreBCClient(client) {
   const fieldDefs = fieldDefsResponse.customFields || [];
 
   const contactResponse = await ghl.getContact(loc, contactId);
+  const bcContact = contactResponse.contact || contactResponse;
+  const clientEmail = bcContact.email || '';
   const readField = (name) => getCustomFieldValue(contactResponse, name, fieldDefs);
 
   // ─── Pull Engagement Data ───
@@ -769,6 +774,7 @@ async function scoreBCClient(client) {
 
   return {
     name: client.name,
+    email: clientEmail,
     program: 'Black Circle',
     score: total,
     lastWeekScore,
@@ -910,6 +916,44 @@ async function _runScoring() {
   }
   fs.writeFileSync(resultsPath, JSON.stringify(resultsData, null, 2));
   log.info('Scoring', `Results saved to ${resultsPath}`);
+
+  // ─── Push Scores + Metrics to Base44 ───
+  const weekLabel = new Date().toISOString().split('T')[0];
+  for (const r of results) {
+    if (r.score === null || !r.email) continue;
+    try {
+      await base44.pushClientScore(r.email, weekLabel, {
+        client_name: r.name,
+        program: r.program || 'Freedom Formula',
+        score: r.score,
+        last_week_score: r.lastWeekScore || 0,
+        status_label: r.status?.label || '',
+        status_description: r.status?.description || '',
+        status_color: r.status?.color || '',
+        danger_active: r.dangerActive || false,
+        breakdown: r.breakdown || {},
+      });
+      await base44.pushClientMetric(r.email, weekLabel, {
+        client_name: r.name,
+        program: r.program || 'Freedom Formula',
+        weekly_revenue: r.marketing?.weeklyRevenue || 0,
+        weekly_leads: r.marketing?.totalLeads || 0,
+        weekly_new_members: r.marketing?.weeklyNewMembers || 0,
+        weekly_cancellations: r.marketing?.weeklyCancellations || 0,
+        active_members: r.marketing?.activeMemberCount || 0,
+        google_leads: r.marketing?.googleLeads || 0,
+        google_spend: r.marketing?.googleSpend || 0,
+        meta_leads: r.marketing?.metaLeads || 0,
+        meta_spend: r.marketing?.metaSpend || 0,
+        total_spend: r.marketing?.totalSpend || 0,
+        blended_cpl: r.marketing?.blendedCPL || 0,
+        conversion_rate: r.marketing?.conversionRate || 0,
+      });
+    } catch (b44Err) {
+      log.warn('Scoring', `Base44 push failed for ${r.name}: ${b44Err.message}`);
+    }
+  }
+  log.info('Scoring', 'Base44 score/metric push complete');
 
   // Write scoring-complete flag so Monday delivery knows scoring finished
   const completeFlagPath = path.resolve(__dirname, '../setup/scoring-complete.json');

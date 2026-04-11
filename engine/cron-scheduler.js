@@ -20,6 +20,7 @@ const scoringEngine = require('./scoring-engine');
 const mondayDelivery = require('./monday-delivery');
 const milestoneCheck = require('./milestone-check');
 const nightlyRefresh = require('./nightly-refresh');
+const scheduleSync = require('./schedule-sync');
 const log = require('../utils/logger');
 
 // Start the API server alongside cron jobs (handles webhooks + form submissions)
@@ -32,6 +33,7 @@ log.info('Scheduler', '  Scoring Engine:  Every Sunday at 11:00pm');
 log.info('Scheduler', '  Nightly Refresh: Mon-Sat at 11:00pm');
 log.info('Scheduler', '  Monday Delivery: Every Monday at 7:00am');
 log.info('Scheduler', '  Milestone Check: Every day at 8:00am');
+log.info('Scheduler', '  Schedule Sync:   Every day at 6:00am');
 log.info('Scheduler', '  API Server:      Running on port ' + (process.env.PORT || process.env.FORM_PORT || 3000));
 
 // Scoring Engine -- Sunday 11:00pm
@@ -93,6 +95,16 @@ cron.schedule('0 8 * * *', async () => {
     await milestoneCheck.run();
   } catch (err) {
     log.error('Scheduler', `Milestone check crashed: ${err.message}`);
+  }
+}, { timezone: 'America/New_York' });
+
+// Schedule Sync -- Daily 6:00am
+cron.schedule('0 6 * * *', async () => {
+  log.info('Scheduler', 'Schedule sync triggered');
+  try {
+    await scheduleSync.run();
+  } catch (err) {
+    log.error('Scheduler', `Schedule sync crashed: ${err.message}`);
   }
 }, { timezone: 'America/New_York' });
 

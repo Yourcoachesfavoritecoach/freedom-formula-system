@@ -271,11 +271,24 @@ function buildUserProfile(fullName, email, phone, cf) {
     rating_health: cf.rating_health || null,
     rating_leadership: cf.rating_leadership || null,
     rating_focus: cf.rating_focus || null,
+    rating_peace: cf.rating_peace || null,
+    rating_parenting: cf.rating_parenting || null,
     monthly_revenue: cf.monthly_revenue || null,
     ff_program: cf.ff_program || null,
     ff_revenue_tier: cf.ff_revenue_tier || null,
     ff_operational_control: cf.ff_operational_control || null,
     ff_hours_on_business: cf.ff_hours_on_business || null,
+    // Intake baselines for scorecard comparison
+    intake_revenue: cf.monthly_revenue || null,
+    intake_profit: cf.monthly_profit || null,
+    intake_members: cf.ff_active_members || null,
+    intake_leads: cf.ff_monthly_leads || null,
+    intake_conversion_rate: cf.ff_conversion_rate || null,
+    intake_ad_spend: cf.ff_ad_spend || null,
+    intake_cpl: cf.ff_cpl || null,
+    intake_hours: cf.ff_hours_on_business || null,
+    intake_date: new Date().toISOString().split('T')[0],
+    is_active: true,
   };
 }
 

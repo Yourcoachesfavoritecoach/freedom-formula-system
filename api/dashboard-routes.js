@@ -8,6 +8,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 const ghl = require('../utils/ghl-api');
 const googleAds = require('../utils/google-ads-api');
@@ -370,6 +371,210 @@ router.get('/checkins/:clientName', async (req, res) => {
     res.json({ checkins: checkinNotes, clientName, total: checkinNotes.length });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch check-ins: ' + err.message });
+  }
+});
+
+// ─── Coach Actions helpers ───
+
+const ACTIONS_PATH = path.resolve(__dirname, '../setup/coach-actions.json');
+
+function loadActions() {
+  if (!fs.existsSync(ACTIONS_PATH)) return [];
+  return JSON.parse(fs.readFileSync(ACTIONS_PATH, 'utf8'));
+}
+
+function saveActions(actions) {
+  fs.writeFileSync(ACTIONS_PATH, JSON.stringify(actions, null, 2) + '\n');
+}
+
+/**
+ * GET /api/dashboard/actions/:clientName
+ * Returns coach action log for a client.
+ * - limit: number of actions (default 20, max 100)
+ * - type: filter by type (note, assignment, follow-up)
+ */
+router.get('/actions/:clientName', (req, res) => {
+  try {
+    const clientName = decodeURIComponent(req.params.clientName);
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const typeFilter = req.query.type || null;
+
+    let actions = loadActions().filter(a => a.clientName === clientName);
+    if (typeFilter) {
+      actions = actions.filter(a => a.type === typeFilter);
+    }
+    // Newest first
+    actions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    actions = actions.slice(0, limit);
+
+    res.json({ actions, clientName, total: actions.length });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to load actions: ' + err.message });
+  }
+});
+
+/**
+ * POST /api/dashboard/actions/:clientName
+ * Add a coach action log entry.
+ * Body: { coachName, action, type, assignedTo?, assignmentReason? }
+ * type: "note" | "assignment" | "follow-up"
+ */
+router.post('/actions/:clientName', (req, res) => {
+  try {
+    const clientName = decodeURIComponent(req.params.clientName);
+    const { coachName, action, type, assignedTo, assignmentReason } = req.body;
+
+    if (!coachName || !action || !type) {
+      return res.status(400).json({ error: 'Missing required fields: coachName, action, type' });
+    }
+    if (!['note', 'assignment', 'follow-up'].includes(type)) {
+      return res.status(400).json({ error: 'type must be: note, assignment, or follow-up' });
+    }
+
+    const entry = {
+      id: crypto.randomUUID(),
+      clientName,
+      coachName,
+      action,
+      type,
+      assignedTo: assignedTo || null,
+      assignmentReason: assignmentReason || null,
+      timestamp: new Date().toISOString(),
+      completed: false,
+    };
+
+    const actions = loadActions();
+    actions.push(entry);
+    saveActions(actions);
+
+    res.json({ success: true, entry });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save action: ' + err.message });
+  }
+});
+
+/**
+ * PUT /api/dashboard/actions/:actionId
+ * Update an action (mark complete, edit text, etc.)
+ * Body: { completed?, action?, assignedTo? }
+ */
+router.put('/actions/:actionId', (req, res) => {
+  try {
+    const actionId = req.params.actionId;
+    const updates = req.body;
+
+    const actions = loadActions();
+    const idx = actions.findIndex(a => a.id === actionId);
+    if (idx === -1) {
+      return res.status(404).json({ error: 'Action not found.' });
+    }
+
+    // Only allow updating specific fields
+    if (updates.completed !== undefined) actions[idx].completed = updates.completed;
+    if (updates.action) actions[idx].action = updates.action;
+    if (updates.assignedTo !== undefined) actions[idx].assignedTo = updates.assignedTo;
+    if (updates.assignmentReason) actions[idx].assignmentReason = updates.assignmentReason;
+    actions[idx].updatedAt = new Date().toISOString();
+
+    saveActions(actions);
+    res.json({ success: true, entry: actions[idx] });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update action: ' + err.message });
+  }
+});
+
+/**
+ * GET /api/dashboard/assignments
+ * Returns all current client assignments (who is assigned to which coach).
+ */
+router.get('/assignments', (req, res) => {
+  try {
+    const actions = loadActions();
+    // Get the latest assignment for each client
+    const assignments = {};
+    actions
+      .filter(a => a.type === 'assignment')
+      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+      .forEach(a => {
+        assignments[a.clientName] = {
+          assignedTo: a.assignedTo,
+          assignmentReason: a.assignmentReason,
+          assignedBy: a.coachName,
+          assignedAt: a.timestamp,
+        };
+      });
+
+    res.json({ assignments });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to load assignments: ' + err.message });
+  }
+});
+
+/**
+ * GET /api/dashboard/comparison
+ * Returns comparison data for all clients: scores, marketing, trends.
+ * Used for multi-client comparison view and averages.
+ */
+router.get('/comparison', async (req, res) => {
+  try {
+    const clients = getSafeClientList();
+    const cdFieldDefsResponse = await ghl.getCustomFields(COACHING_DEPT_ID);
+    const cdFields = cdFieldDefsResponse.customFields || [];
+
+    const comparison = [];
+
+    for (const client of clients) {
+      const mirrorId = client.coaching_dept_mirror_contact_id;
+      if (!mirrorId) continue;
+
+      try {
+        const contactResponse = await ghl.getContact(COACHING_DEPT_ID, mirrorId);
+        const readField = (name) => getCustomFieldValue(contactResponse, name, cdFields);
+
+        const score = parseFloat(readField('FF Health Score This Week') || 0);
+        const lastWeekScore = parseFloat(readField('FF Health Score Last Week') || 0);
+        const scoreStatus = readField('FF Score Status') || '';
+        const dangerActive = readField('FF Danger Zone Active') === 'true';
+        const program = readField('FF Program') || client.program;
+        const activeMemberCount = parseFloat(readField('FF Active Member Count') || 0);
+        const weeklyCancellations = parseFloat(readField('FF Weekly Cancellations') || 0);
+        const weeklyRevenue = parseFloat(readField('FF Weekly Revenue') || 0);
+
+        comparison.push({
+          name: client.name,
+          program,
+          score,
+          lastWeekScore,
+          change: score - lastWeekScore,
+          scoreStatus,
+          dangerActive,
+          activeMemberCount,
+          weeklyCancellations,
+          churnPercent: activeMemberCount > 0 ? Math.round((weeklyCancellations / activeMemberCount) * 10000) / 100 : 0,
+          weeklyRevenue,
+          googleAdsId: client.google_ads_customer_id || '',
+          metaAdId: client.meta_ad_account_id || '',
+        });
+      } catch (contactErr) {
+        comparison.push({ name: client.name, program: client.program, error: contactErr.message });
+      }
+    }
+
+    // Compute averages
+    const scored = comparison.filter(c => !c.error && c.score > 0);
+    const allValid = comparison.filter(c => !c.error);
+    const averages = {
+      avgScore: scored.length > 0 ? Math.round(scored.reduce((s, c) => s + c.score, 0) / scored.length) : 0,
+      avgChange: scored.length > 0 ? Math.round(scored.reduce((s, c) => s + c.change, 0) / scored.length * 10) / 10 : 0,
+      totalClients: allValid.length,
+      dangerCount: allValid.filter(c => c.dangerActive).length,
+      avgChurn: allValid.length > 0 ? Math.round(allValid.reduce((s, c) => s + (c.churnPercent || 0), 0) / allValid.length * 100) / 100 : 0,
+      avgRevenue: allValid.length > 0 ? Math.round(allValid.reduce((s, c) => s + (c.weeklyRevenue || 0), 0) / allValid.length) : 0,
+    };
+
+    res.json({ comparison, averages, pulledAt: new Date().toISOString() });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to build comparison: ' + err.message });
   }
 });
 

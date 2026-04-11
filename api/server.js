@@ -23,6 +23,7 @@ const ghl = require('../utils/ghl-api');
 const { onboardNewClients } = require('../engine/onboard-client');
 const clickup = require('../utils/clickup-api');
 const dashboardRoutes = require('./dashboard-routes');
+const intakeRoutes = require('./intake-routes');
 const log = require('../utils/logger');
 const runLock = require('../utils/run-lock');
 
@@ -246,6 +247,9 @@ app.post('/api/admin/onboard', async (req, res) => {
 
 // ─── Dashboard API ───
 app.use('/api/dashboard', dashboardRoutes);
+
+// ─── Client Intake API ───
+app.use('/api/intake', intakeRoutes);
 
 // ─── Health check (extended) ───
 app.get('/api/health', (req, res) => {

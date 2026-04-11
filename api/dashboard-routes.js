@@ -276,6 +276,13 @@ router.get('/marketing/:clientName', async (req, res) => {
         return isWon && updatedAt >= weekAgo;
       });
 
+      // Filter to recent disqualified/lost deals
+      const recentDisqualified = opps.filter(o => {
+        const isLost = o.status === 'lost' || o.status === 'abandoned';
+        const updatedAt = new Date(o.updatedAt || o.dateUpdated);
+        return isLost && updatedAt >= weekAgo;
+      });
+
       const totalRevenue = recentWon.reduce((sum, o) => sum + (parseFloat(o.monetaryValue) || 0), 0);
       const avgDealAmount = recentWon.length > 0 ? Math.round(totalRevenue / recentWon.length) : 0;
 
@@ -283,6 +290,7 @@ router.get('/marketing/:clientName', async (req, res) => {
         set: totalSet,
         showed: totalShowed,
         closed: recentWon.length,
+        disqualified: recentDisqualified.length,
         totalRevenue: Math.round(totalRevenue * 100) / 100,
         avgDealAmount,
       };
@@ -317,6 +325,10 @@ router.get('/marketing/:clientName', async (req, res) => {
       }
     }
 
+    // CAC: Cost to Acquire a Customer = Total Spend / Closed Deals
+    const cac = pipeline.closed > 0
+      ? Math.round((totalSpend / pipeline.closed) * 100) / 100 : 0;
+
     res.json({
       clientName,
       period: { start: startStr, end: endStr },
@@ -325,6 +337,7 @@ router.get('/marketing/:clientName', async (req, res) => {
       totals: { leads: totalLeads, spend: totalSpend, avgCPL },
       pipeline,
       costPerAppointment: { google: googleCostPerAppt, meta: metaCostPerAppt },
+      cac,
       churn,
       pulledAt: new Date().toISOString(),
     });

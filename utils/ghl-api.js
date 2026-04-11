@@ -91,6 +91,10 @@ async function searchContacts(locationId, query) {
   return apiRequest('GET', `/contacts/?${new URLSearchParams(params)}`, locationId);
 }
 
+async function getContactNotes(locationId, contactId) {
+  return apiRequest('GET', `/contacts/${contactId}/notes`, locationId);
+}
+
 async function addContactNote(locationId, contactId, body) {
   return apiRequest('POST', `/contacts/${contactId}/notes`, locationId, { body });
 }
@@ -227,6 +231,7 @@ module.exports = {
   createContact,
   updateContact,
   searchContacts,
+  getContactNotes,
   addContactNote,
   addContactTag,
   removeContactTag,

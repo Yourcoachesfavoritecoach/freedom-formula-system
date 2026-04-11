@@ -165,4 +165,45 @@ router.get('/history', (req, res) => {
   }
 });
 
+/**
+ * GET /api/dashboard/checkins/:clientName
+ * Returns the most recent weekly check-in notes for a client.
+ * Pulls notes from the Coaching Dept. mirror contact in GHL.
+ * - limit: number of notes to return (default 5, max 20)
+ */
+router.get('/checkins/:clientName', async (req, res) => {
+  try {
+    const clientName = decodeURIComponent(req.params.clientName);
+    const limit = Math.min(parseInt(req.query.limit) || 5, 20);
+
+    const clients = getSafeClientList();
+    const client = clients.find(c => c.name === clientName);
+    if (!client) {
+      return res.status(404).json({ error: `Client "${clientName}" not found.` });
+    }
+
+    const mirrorId = client.coaching_dept_mirror_contact_id;
+    if (!mirrorId) {
+      return res.json({ checkins: [], message: 'No mirror contact configured.' });
+    }
+
+    const notesResponse = await ghl.getContactNotes(COACHING_DEPT_ID, mirrorId);
+    const allNotes = notesResponse.notes || [];
+
+    // Filter to weekly check-in notes (they contain "Weekly Reflection Submission" in the body)
+    const checkinNotes = allNotes
+      .filter(n => n.body && n.body.includes('Weekly Reflection Submission'))
+      .slice(0, limit)
+      .map(n => ({
+        id: n.id,
+        body: n.body,
+        dateAdded: n.dateAdded,
+      }));
+
+    res.json({ checkins: checkinNotes, clientName, total: checkinNotes.length });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch check-ins: ' + err.message });
+  }
+});
+
 module.exports = router;

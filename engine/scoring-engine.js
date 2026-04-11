@@ -760,10 +760,9 @@ async function scoreBCClient(client) {
     console.log('  Mirror record updated');
   }
 
+  const bcWeeklyCancellations = parseFloat(readField('FF Weekly Cancellations') || 0);
+  const bcActiveMemberCount = parseFloat(readField('FF Active Member Count') || 0);
   const totalWeeklySpend = googleSpend + metaSpend;
-  const blendedCPL = totalWeeklyLeads > 0 ? totalWeeklySpend / totalWeeklyLeads : 0;
-  const weeklyCancellations = parseFloat(readField('FF Weekly Cancellations') || 0);
-  const activeMemberCount = parseFloat(readField('FF Active Member Count') || 0);
 
   return {
     name: client.name,
@@ -785,8 +784,8 @@ async function scoreBCClient(client) {
       metaCPL: metaLeads > 0 ? Math.round((metaSpend / metaLeads) * 100) / 100 : 0,
       weeklyRevenue,
       weeklyNewMembers,
-      weeklyCancellations,
-      activeMemberCount,
+      weeklyCancellations: bcWeeklyCancellations,
+      activeMemberCount: bcActiveMemberCount,
       conversionRate: Math.round(conversionRate * 100) / 100,
     },
   };

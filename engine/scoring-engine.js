@@ -461,6 +461,22 @@ async function scoreClient(client) {
     status,
     dangerActive,
     breakdown,
+    marketing: {
+      googleLeads,
+      googleSpend: Math.round(googleSpend * 100) / 100,
+      metaLeads,
+      metaSpend: Math.round(metaSpend * 100) / 100,
+      totalLeads: totalWeeklyLeads,
+      totalSpend: Math.round(totalWeeklySpend * 100) / 100,
+      blendedCPL: Math.round(blendedCPL * 100) / 100,
+      googleCPL: googleLeads > 0 ? Math.round((googleSpend / googleLeads) * 100) / 100 : 0,
+      metaCPL: metaLeads > 0 ? Math.round((metaSpend / metaLeads) * 100) / 100 : 0,
+      weeklyRevenue,
+      weeklyNewMembers,
+      weeklyCancellations,
+      activeMemberCount,
+      conversionRate: Math.round(conversionRate * 10000) / 100,
+    },
   };
 }
 
@@ -744,6 +760,11 @@ async function scoreBCClient(client) {
     console.log('  Mirror record updated');
   }
 
+  const totalWeeklySpend = googleSpend + metaSpend;
+  const blendedCPL = totalWeeklyLeads > 0 ? totalWeeklySpend / totalWeeklyLeads : 0;
+  const weeklyCancellations = parseFloat(readField('FF Weekly Cancellations') || 0);
+  const activeMemberCount = parseFloat(readField('FF Active Member Count') || 0);
+
   return {
     name: client.name,
     program: 'Black Circle',
@@ -752,6 +773,22 @@ async function scoreBCClient(client) {
     status,
     dangerActive,
     breakdown,
+    marketing: {
+      googleLeads,
+      googleSpend: Math.round(googleSpend * 100) / 100,
+      metaLeads,
+      metaSpend: Math.round(metaSpend * 100) / 100,
+      totalLeads: totalWeeklyLeads,
+      totalSpend: Math.round(totalWeeklySpend * 100) / 100,
+      blendedCPL: Math.round(blendedCPL * 100) / 100,
+      googleCPL: googleLeads > 0 ? Math.round((googleSpend / googleLeads) * 100) / 100 : 0,
+      metaCPL: metaLeads > 0 ? Math.round((metaSpend / metaLeads) * 100) / 100 : 0,
+      weeklyRevenue,
+      weeklyNewMembers,
+      weeklyCancellations,
+      activeMemberCount,
+      conversionRate: Math.round(conversionRate * 100) / 100,
+    },
   };
 }
 
@@ -849,6 +886,7 @@ async function run() {
         status: r.status,
         dangerActive: r.dangerActive,
         breakdown: r.breakdown,
+        marketing: r.marketing || {},
       };
     }
   }

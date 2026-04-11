@@ -10,6 +10,8 @@ const path = require('path');
 const fs = require('fs');
 
 const ghl = require('../utils/ghl-api');
+const googleAds = require('../utils/google-ads-api');
+const metaAds = require('../utils/meta-ads-api');
 const { getCustomFieldValue } = require('../utils/rolling-averages');
 
 const router = express.Router();
@@ -29,6 +31,14 @@ function requireDashboardToken(req, res, next) {
 }
 
 router.use(requireDashboardToken);
+
+// Helper: load full registry (internal use only, includes location IDs for API calls)
+function getFullClientList() {
+  const registryPath = path.resolve(__dirname, '../setup/client-registry.json');
+  delete require.cache[require.resolve(registryPath)];
+  const registry = require(registryPath);
+  return registry.clients.filter(c => c.ghl_location_id !== 'USMAN_FILLS_THIS');
+}
 
 // Helper: load registry without API keys
 function getSafeClientList() {
@@ -162,6 +172,163 @@ router.get('/history', (req, res) => {
     res.json({ history, weeks: history.length });
   } catch (err) {
     res.status(500).json({ error: 'Failed to load score history.' });
+  }
+});
+
+/**
+ * GET /api/dashboard/marketing/:clientName
+ * Returns live marketing data for a client: ad performance, pipeline, appointments.
+ * Pulls from Google Ads, Meta Ads, and GHL pipeline in real-time.
+ */
+router.get('/marketing/:clientName', async (req, res) => {
+  try {
+    const clientName = decodeURIComponent(req.params.clientName);
+    const fullClients = getFullClientList();
+    const client = fullClients.find(c => c.name === clientName);
+    if (!client) {
+      return res.status(404).json({ error: `Client "${clientName}" not found.` });
+    }
+
+    // Date range: last 7 days
+    const now = new Date();
+    const weekAgo = new Date(now);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    const startStr = weekAgo.toISOString().split('T')[0];
+    const endStr = now.toISOString().split('T')[0];
+
+    // Pull Google Ads data
+    let google = { leads: 0, spend: 0, cpl: 0 };
+    if (client.google_ads_customer_id && client.google_ads_customer_id !== 'USMAN_FILLS_THIS') {
+      try {
+        const gResult = await googleAds.getWeeklyLeadsAndSpend(
+          client.google_ads_customer_id, startStr, endStr
+        );
+        if (gResult) {
+          google = {
+            leads: gResult.leads,
+            spend: Math.round(gResult.spend * 100) / 100,
+            cpl: gResult.leads > 0 ? Math.round((gResult.spend / gResult.leads) * 100) / 100 : 0,
+          };
+        }
+      } catch (err) {
+        google.error = err.message;
+      }
+    }
+
+    // Pull Meta Ads data
+    let meta = { leads: 0, spend: 0, cpl: 0 };
+    if (client.meta_ad_account_id && client.meta_ad_account_id !== 'USMAN_FILLS_THIS') {
+      try {
+        const mResult = await metaAds.getWeeklyLeadsAndSpend(
+          client.meta_ad_account_id, startStr, endStr
+        );
+        if (mResult) {
+          meta = {
+            leads: mResult.leads,
+            spend: Math.round(mResult.spend * 100) / 100,
+            cpl: mResult.leads > 0 ? Math.round((mResult.spend / mResult.leads) * 100) / 100 : 0,
+          };
+        }
+      } catch (err) {
+        meta.error = err.message;
+      }
+    }
+
+    // Totals
+    const totalLeads = google.leads + meta.leads;
+    const totalSpend = Math.round((google.spend + meta.spend) * 100) / 100;
+    const avgCPL = totalLeads > 0 ? Math.round((totalSpend / totalLeads) * 100) / 100 : 0;
+
+    // Pull GHL pipeline/opportunity data
+    let pipeline = { set: 0, showed: 0, closed: 0, totalRevenue: 0, avgDealAmount: 0 };
+    try {
+      const loc = client.ghl_location_id;
+      // Get appointments from GHL
+      const calendarsRes = await ghl.getCalendars(loc);
+      const calendars = calendarsRes.calendars || [];
+
+      let totalSet = 0;
+      let totalShowed = 0;
+      for (const cal of calendars) {
+        try {
+          const appts = await ghl.getAppointments(loc, {
+            calendarId: cal.id,
+            startTime: weekAgo.toISOString(),
+            endTime: now.toISOString(),
+          });
+          const events = appts.events || [];
+          totalSet += events.length;
+          totalShowed += events.filter(e => e.status === 'showed' || e.appoinmentStatus === 'showed').length;
+        } catch (calErr) {
+          // Skip calendars that fail
+        }
+      }
+
+      // Get opportunities (deals)
+      const oppsRes = await ghl.searchOpportunities(loc, { limit: 100 });
+      const opps = oppsRes.opportunities || [];
+
+      // Filter to recent won deals
+      const recentWon = opps.filter(o => {
+        const isWon = o.status === 'won';
+        const updatedAt = new Date(o.updatedAt || o.dateUpdated);
+        return isWon && updatedAt >= weekAgo;
+      });
+
+      const totalRevenue = recentWon.reduce((sum, o) => sum + (parseFloat(o.monetaryValue) || 0), 0);
+      const avgDealAmount = recentWon.length > 0 ? Math.round(totalRevenue / recentWon.length) : 0;
+
+      pipeline = {
+        set: totalSet,
+        showed: totalShowed,
+        closed: recentWon.length,
+        totalRevenue: Math.round(totalRevenue * 100) / 100,
+        avgDealAmount,
+      };
+    } catch (pipeErr) {
+      pipeline.error = pipeErr.message;
+    }
+
+    // Cost per appointment
+    const googleCostPerAppt = pipeline.set > 0 && google.spend > 0
+      ? Math.round((google.spend / pipeline.set) * 100) / 100 : 0;
+    const metaCostPerAppt = pipeline.set > 0 && meta.spend > 0
+      ? Math.round((meta.spend / pipeline.set) * 100) / 100 : 0;
+
+    // Read churn data from mirror contact
+    let churn = { membersLost: 0, churnPercent: 0 };
+    const mirrorId = client.coaching_dept_mirror_contact_id;
+    if (mirrorId) {
+      try {
+        const cdFieldDefsResponse = await ghl.getCustomFields(COACHING_DEPT_ID);
+        const cdFields = cdFieldDefsResponse.customFields || [];
+        const contactResponse = await ghl.getContact(COACHING_DEPT_ID, mirrorId);
+        const readField = (name) => getCustomFieldValue(contactResponse, name, cdFields);
+
+        const cancellations = parseFloat(readField('FF Weekly Cancellations') || 0);
+        const activeMembers = parseFloat(readField('FF Active Member Count') || 0);
+        churn = {
+          membersLost: cancellations,
+          churnPercent: activeMembers > 0 ? Math.round((cancellations / activeMembers) * 10000) / 100 : 0,
+        };
+      } catch (churnErr) {
+        churn.error = churnErr.message;
+      }
+    }
+
+    res.json({
+      clientName,
+      period: { start: startStr, end: endStr },
+      google,
+      meta,
+      totals: { leads: totalLeads, spend: totalSpend, avgCPL },
+      pipeline,
+      costPerAppointment: { google: googleCostPerAppt, meta: metaCostPerAppt },
+      churn,
+      pulledAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch marketing data: ' + err.message });
   }
 });
 

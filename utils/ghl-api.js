@@ -147,6 +147,11 @@ async function getOpportunitiesByContact(locationId, contactId) {
   return apiRequest('GET', `/opportunities/search?contact_id=${contactId}`, locationId);
 }
 
+async function searchOpportunities(locationId, params = {}) {
+  const qs = new URLSearchParams({ location_id: locationId, ...params }).toString();
+  return apiRequest('GET', `/opportunities/search?${qs}`, locationId);
+}
+
 // ─── Tags ───
 
 async function getTags(locationId) {
@@ -244,6 +249,7 @@ module.exports = {
   createOpportunity,
   updateOpportunity,
   getOpportunitiesByContact,
+  searchOpportunities,
   getTags,
   createTag,
   createTask,

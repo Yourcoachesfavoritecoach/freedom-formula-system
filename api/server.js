@@ -17,18 +17,53 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+require('../setup/ensure-registry');
 
 const ghl = require('../utils/ghl-api');
 const { onboardNewClients } = require('../engine/onboard-client');
 const clickup = require('../utils/clickup-api');
 const dashboardRoutes = require('./dashboard-routes');
+const log = require('../utils/logger');
+const runLock = require('../utils/run-lock');
 
 const app = express();
 const PORT = process.env.PORT || process.env.FORM_PORT || 3000;
 
+// ─── Express-level rate limiting (simple in-memory) ───
+const requestCounts = {};
+const RATE_WINDOW_MS = 60 * 1000; // 1 minute
+const RATE_LIMIT = 60; // requests per minute per IP
+
+function rateLimitMiddleware(req, res, next) {
+  const ip = req.ip || req.connection.remoteAddress;
+  const now = Date.now();
+
+  if (!requestCounts[ip] || now - requestCounts[ip].start > RATE_WINDOW_MS) {
+    requestCounts[ip] = { start: now, count: 1 };
+  } else {
+    requestCounts[ip].count++;
+  }
+
+  if (requestCounts[ip].count > RATE_LIMIT) {
+    return res.status(429).json({ error: 'Too many requests. Try again in a minute.' });
+  }
+  next();
+}
+
+// Clean up stale rate limit entries every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const ip of Object.keys(requestCounts)) {
+    if (now - requestCounts[ip].start > RATE_WINDOW_MS * 2) {
+      delete requestCounts[ip];
+    }
+  }
+}, 5 * 60 * 1000);
+
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(rateLimitMiddleware);
 
 // Load client registry for PIT resolution
 function loadRegistry() {
@@ -141,15 +176,16 @@ app.get('/admin/onboard', (req, res) => {
 // ─── Handle admin onboarding submission ───
 app.post('/api/admin/onboard', async (req, res) => {
   try {
-    // Token check
+    // Token check (header-only, no query string for security)
     const adminToken = process.env.ADMIN_TOKEN;
-    if (adminToken) {
-      const authHeader = req.headers.authorization || '';
-      const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
-      const queryToken = req.query.token || '';
-      if (bearerToken !== adminToken && queryToken !== adminToken) {
-        return res.status(401).json({ error: 'Unauthorized. Invalid admin token.' });
-      }
+    if (!adminToken) {
+      log.error('Server', 'ADMIN_TOKEN not configured. Rejecting admin request.');
+      return res.status(500).json({ error: 'Admin token not configured.' });
+    }
+    const authHeader = req.headers.authorization || '';
+    const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    if (bearerToken !== adminToken) {
+      return res.status(401).json({ error: 'Unauthorized. Send token via Authorization: Bearer header.' });
     }
 
     const { name, program, ghl_location_id, ghl_api_key, ff_contact_id, google_ads_customer_id, meta_ad_account_id } = req.body;
@@ -211,9 +247,23 @@ app.post('/api/admin/onboard', async (req, res) => {
 // ─── Dashboard API ───
 app.use('/api/dashboard', dashboardRoutes);
 
-// ─── Health check ───
+// ─── Health check (extended) ───
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  const recentErrors = log.getRecentErrors(5);
+  res.json({
+    status: recentErrors.some(e => e.fatal) ? 'degraded' : 'ok',
+    timestamp: new Date().toISOString(),
+    locks: {
+      scoring: runLock.isLocked('scoring'),
+      nightlyRefresh: runLock.isLocked('nightly-refresh'),
+    },
+    recentErrorCount: log.getRecentErrors().length,
+    recentErrors: recentErrors.map(e => ({
+      time: e.timestamp,
+      context: e.context,
+      message: e.message,
+    })),
+  });
 });
 
 // ─── Start server ───

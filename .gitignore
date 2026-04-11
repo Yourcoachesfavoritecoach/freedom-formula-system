@@ -1,4 +1,18 @@
 node_modules/
 .env
 .claude/
+
+# Sensitive data files (contain API keys, contact IDs)
+setup/client-registry.json
+
+# Runtime files
 last-score-results.json
+setup/last-score-results.json
+setup/score-history.json
+setup/daily-snapshots.json
+setup/coach-actions.json
+setup/scoring-complete.json
+setup/*.lock
+
+# OS files
+.DS_Store

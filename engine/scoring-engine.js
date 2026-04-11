@@ -6,6 +6,7 @@
  */
 
 const path = require('path');
+const fs = require('fs');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const ghl = require('../utils/ghl-api');
@@ -16,6 +17,8 @@ const { calculateBCScore, getBCScoreStatus } = require('../utils/bc-score-calcul
 const { updateAllRollingAverages, getCustomFieldValue } = require('../utils/rolling-averages');
 const { ALL_FIELDS, FF_FIELDS, BC_FIELDS } = require('../utils/field-definitions');
 const { onboardNewClients } = require('./onboard-client');
+const log = require('../utils/logger');
+const runLock = require('../utils/run-lock');
 
 const COACHING_DEPT_ID = process.env.COACHING_DEPT_LOCATION_ID;
 const REENGAGEMENT_WORKFLOW_ID = process.env.GHL_REENGAGEMENT_WORKFLOW_ID;
@@ -792,18 +795,31 @@ async function scoreBCClient(client) {
 }
 
 async function run() {
-  console.log('=== Freedom Formula Scoring Engine ===');
-  console.log(`Run time: ${new Date().toISOString()}`);
+  // Prevent double-execution
+  if (!runLock.acquire('scoring')) {
+    log.warn('Scoring', 'Scoring engine already running. Skipping this execution.');
+    return;
+  }
+
+  try {
+    return await _runScoring();
+  } finally {
+    runLock.release('scoring');
+  }
+}
+
+async function _runScoring() {
+  log.info('Scoring', '=== Freedom Formula Scoring Engine ===');
+  log.info('Scoring', `Run time: ${new Date().toISOString()}`);
 
   // Auto-onboard any new clients (creates mirror contacts, pipeline, tags)
   await onboardNewClients();
 
   const { ffClients, bcClients } = loadRegistry();
-  console.log(`Processing ${ffClients.length} Freedom Formula clients`);
-  console.log(`Processing ${bcClients.length} Black Circle clients`);
+  log.info('Scoring', `Processing ${ffClients.length} FF + ${bcClients.length} BC clients`);
 
   if (ffClients.length === 0 && bcClients.length === 0) {
-    console.log('No clients in registry. Exiting.');
+    log.info('Scoring', 'No clients in registry. Exiting.');
     return;
   }
 
@@ -859,22 +875,25 @@ async function run() {
   }
 
   // Summary
-  console.log('\n=== Scoring Complete ===');
-  console.log(`Processed: ${results.length}`);
-  console.log(`Succeeded: ${results.filter((r) => r.score !== null).length}`);
-  console.log(`Failed: ${results.filter((r) => r.score === null).length}`);
+  const succeeded = results.filter((r) => r.score !== null).length;
+  const failed = results.filter((r) => r.score === null).length;
+  log.info('Scoring', `=== Scoring Complete === Processed: ${results.length}, Succeeded: ${succeeded}, Failed: ${failed}`);
 
   for (const r of results) {
     const tag = r.program === 'Black Circle' ? '[BC]' : '[FF]';
     if (r.score !== null) {
-      console.log(`  ${tag} ${r.name}: ${r.score}/100 (${r.status.label})`);
+      log.info('Scoring', `  ${tag} ${r.name}: ${r.score}/100 (${r.status.label})`);
     } else {
-      console.log(`  ${tag} ${r.name}: FAILED - ${r.error}`);
+      log.error('Scoring', `  ${tag} ${r.name}: FAILED - ${r.error}`);
     }
   }
 
+  // Alert if too many failures
+  if (failed > 0 && failed >= succeeded) {
+    log.fatal('Scoring', `Majority of clients failed scoring (${failed}/${results.length}). Possible API outage.`);
+  }
+
   // Save results with breakdowns for Monday delivery to read
-  const fs = require('fs');
   const resultsPath = path.resolve(__dirname, '../setup/last-score-results.json');
   const resultsData = {};
   for (const r of results) {
@@ -890,7 +909,15 @@ async function run() {
     }
   }
   fs.writeFileSync(resultsPath, JSON.stringify(resultsData, null, 2));
-  console.log(`Results saved to ${resultsPath}`);
+  log.info('Scoring', `Results saved to ${resultsPath}`);
+
+  // Write scoring-complete flag so Monday delivery knows scoring finished
+  const completeFlagPath = path.resolve(__dirname, '../setup/scoring-complete.json');
+  fs.writeFileSync(completeFlagPath, JSON.stringify({
+    completedAt: new Date().toISOString(),
+    clientsScored: succeeded,
+    clientsFailed: failed,
+  }, null, 2));
 
   // Append to score history for dashboard charts
   const historyPath = path.resolve(__dirname, '../setup/score-history.json');
@@ -911,9 +938,9 @@ async function run() {
     // Keep last 52 weeks
     if (history.length > 52) history = history.slice(-52);
     fs.writeFileSync(historyPath, JSON.stringify(history, null, 2));
-    console.log(`Score history updated (${history.length} weeks)`);
+    log.info('Scoring', `Score history updated (${history.length} weeks)`);
   } catch (histErr) {
-    console.error('Warning: Could not update score history -', histErr.message);
+    log.error('Scoring', `Could not update score history: ${histErr.message}`);
   }
 
   return results;

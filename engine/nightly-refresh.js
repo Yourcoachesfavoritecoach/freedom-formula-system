@@ -12,6 +12,8 @@ require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 
 const ghl = require('../utils/ghl-api');
 const { getCustomFieldValue } = require('../utils/rolling-averages');
+const log = require('../utils/logger');
+const runLock = require('../utils/run-lock');
 
 const COACHING_DEPT_ID = process.env.COACHING_DEPT_LOCATION_ID;
 
@@ -23,12 +25,30 @@ function loadRegistry() {
 }
 
 async function run() {
-  console.log('=== Nightly Score Refresh ===');
-  console.log(`Run time: ${new Date().toISOString()}`);
+  // Prevent double-execution or running during scoring
+  if (runLock.isLocked('scoring')) {
+    log.warn('NightlyRefresh', 'Scoring engine is running. Skipping nightly refresh.');
+    return;
+  }
+  if (!runLock.acquire('nightly-refresh')) {
+    log.warn('NightlyRefresh', 'Nightly refresh already running. Skipping.');
+    return;
+  }
+
+  try {
+    return await _runRefresh();
+  } finally {
+    runLock.release('nightly-refresh');
+  }
+}
+
+async function _runRefresh() {
+  log.info('NightlyRefresh', '=== Nightly Score Refresh ===');
+  log.info('NightlyRefresh', `Run time: ${new Date().toISOString()}`);
 
   const clients = loadRegistry();
   if (clients.length === 0) {
-    console.log('No clients. Exiting.');
+    log.info('NightlyRefresh', 'No clients. Exiting.');
     return;
   }
 

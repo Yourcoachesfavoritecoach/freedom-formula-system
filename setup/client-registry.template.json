@@ -1,0 +1,14 @@
+{
+  "clients": [
+    {
+      "name": "Example Client",
+      "program": "Freedom Formula",
+      "ghl_location_id": "FILL_THIS",
+      "ghl_api_key": "FILL_THIS",
+      "ff_contact_id": "FILL_THIS",
+      "google_ads_customer_id": "",
+      "meta_ad_account_id": "",
+      "coaching_dept_mirror_contact_id": ""
+    }
+  ]
+}

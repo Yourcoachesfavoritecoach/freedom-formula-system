@@ -4,15 +4,27 @@
  * Each sub-account has its own PIT stored in the client registry or .env.
  * The Coaching Dept. PIT is in COACHING_DEPT_API_KEY.
  * Client sub-account PITs are stored in the client registry.
+ *
+ * Features:
+ * - Per-location rate limiting (80 req/min, GHL limit is 100)
+ * - Retry with exponential backoff (429 + 5xx errors)
+ * - Structured logging
  */
 
 const axios = require('axios');
 require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
 
+const log = require('./logger');
+const { getGHLLimiter, globalGHLLimiter } = require('./rate-limiter');
+
 const API_BASE = 'https://services.leadconnectorhq.com';
 const AGENCY_KEY = process.env.FBS_AGENCY_API_KEY;
 const COACHING_DEPT_ID = process.env.COACHING_DEPT_LOCATION_ID;
 const COACHING_DEPT_KEY = process.env.COACHING_DEPT_API_KEY;
+
+// Default retry config
+const DEFAULT_MAX_RETRIES = 3;
+const BASE_BACKOFF_MS = 1000;
 
 // Map of locationId -> API key for sub-account access
 const _keyCache = {};
@@ -31,7 +43,9 @@ function registerLocationKey(locationId, apiKey) {
 function getKeyForLocation(locationId) {
   if (_keyCache[locationId]) return _keyCache[locationId];
   if (locationId === COACHING_DEPT_ID) return COACHING_DEPT_KEY;
-  return COACHING_DEPT_KEY; // Default fallback
+  // Warn on fallback so misconfigured locations are visible
+  log.warn('GHL', `No API key registered for location ${locationId}, falling back to Coaching Dept key`);
+  return COACHING_DEPT_KEY;
 }
 
 function headers(locationId) {
@@ -43,26 +57,60 @@ function headers(locationId) {
   };
 }
 
-async function apiRequest(method, path, locationId, data = null, retries = 1) {
+/**
+ * Core API request with rate limiting, retries, and backoff.
+ * Retries on: 429 (rate limit), 500+ (server error), network errors.
+ * Does NOT retry on: 400, 401, 403, 404 (client errors).
+ */
+async function apiRequest(method, path, locationId, data = null, maxRetries = DEFAULT_MAX_RETRIES) {
   const url = `${API_BASE}${path}`;
-  for (let attempt = 0; attempt <= retries; attempt++) {
+
+  // Acquire rate limit tokens (per-location + global)
+  const locationLimiter = getGHLLimiter(locationId);
+  await Promise.all([
+    locationLimiter.acquire(),
+    globalGHLLimiter.acquire(),
+  ]);
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const config = {
         method,
         url,
         headers: headers(locationId),
+        timeout: 30000, // 30s timeout per request
         ...(data ? { data } : {}),
       };
       const res = await axios(config);
       return res.data;
     } catch (err) {
-      if (attempt < retries && err.response && err.response.status >= 500) {
-        await sleep(2000);
+      const status = err.response ? err.response.status : 'NETWORK';
+      const isRetryable = !err.response || err.response.status === 429 || err.response.status >= 500;
+      const isLastAttempt = attempt >= maxRetries;
+
+      if (isRetryable && !isLastAttempt) {
+        // Exponential backoff: 1s, 2s, 4s
+        let waitMs = BASE_BACKOFF_MS * Math.pow(2, attempt);
+
+        // If 429, check Retry-After header
+        if (err.response && err.response.status === 429) {
+          const retryAfter = err.response.headers['retry-after'];
+          if (retryAfter) {
+            waitMs = Math.max(waitMs, parseInt(retryAfter) * 1000);
+          }
+        }
+
+        log.warn('GHL', `${method} ${path} failed (${status}), retry ${attempt + 1}/${maxRetries} in ${waitMs}ms`);
+        await sleep(waitMs);
         continue;
       }
-      const status = err.response ? err.response.status : 'NETWORK';
+
+      // Non-retryable or exhausted retries
       const body = err.response ? err.response.data : err.message;
-      console.error(`GHL API ${method} ${path} failed (${status}):`, body);
+      log.error('GHL', `${method} ${path} failed permanently (${status}) after ${attempt + 1} attempts`, {
+        status,
+        body: typeof body === 'string' ? body.substring(0, 200) : body,
+      });
       throw err;
     }
   }
@@ -104,7 +152,6 @@ async function addContactTag(locationId, contactId, tags) {
 }
 
 async function removeContactTag(locationId, contactId, tags) {
-  // GHL v2 uses DELETE with body
   return apiRequest('DELETE', `/contacts/${contactId}/tags`, locationId, { tags });
 }
 
@@ -121,7 +168,6 @@ async function createCustomField(locationId, fieldData) {
 // ─── Custom Values (contact-level field writes) ───
 
 async function updateContactCustomFields(locationId, contactId, customFields) {
-  // customFields is an array of { id, value }
   return apiRequest('PUT', `/contacts/${contactId}`, locationId, { customFields: customFields });
 }
 
@@ -175,7 +221,6 @@ async function getCalendars(locationId) {
 }
 
 async function getAppointments(locationId, params) {
-  // GHL v2 requires startTime/endTime as ISO strings and a calendarId or groupId
   const qs = new URLSearchParams(params).toString();
   return apiRequest('GET', `/calendars/events?locationId=${locationId}&${qs}`, locationId);
 }
@@ -223,7 +268,7 @@ async function writeFieldsToContact(locationId, contactId, fieldMap, fieldDefini
     if (def) {
       customFields.push({ id: def.id, value: value });
     } else {
-      console.warn(`Custom field not found: ${name}`);
+      log.warn('GHL', `Custom field not found: ${name}`);
     }
   }
   if (customFields.length > 0) {

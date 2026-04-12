@@ -19,9 +19,9 @@ function calculateBCScore(data) {
 
   // ─── CATEGORY 1: LEADERSHIP & GROWTH (35 pts) ───
 
-  // Metric 1: Strategic initiative execution (15 pts)
-  // Did they execute the growth play Dave assigned this week?
-  breakdown.strategicInitiative = scoreStrategicInitiative(data.initiativeStatus);
+  // Metric 1: Action item completion (15 pts)
+  // Did they execute the assignments from their coaching call?
+  breakdown.actionCompletion = scoreActionCompletion(data.actionCompletionRate);
 
   // Metric 2: Team development score (10 pts)
   // Self-reported: are they building leaders, not just managing staff?
@@ -95,13 +95,14 @@ function calculateBCScore(data) {
 
 // CATEGORY 1: LEADERSHIP & GROWTH
 
-function scoreStrategicInitiative(status) {
-  if (!status) return 0;
-  const s = status.toLowerCase();
-  if (s.startsWith('yes') || s === 'completed' || s === 'executed') return 15;
-  if (s.startsWith('partial') || s === 'in progress') return 8;
-  if (s === 'pivoted') return 5; // they adjusted the play with rationale
-  return 0;
+function scoreActionCompletion(completionRate) {
+  // completionRate: 0-1 ratio of completed/total action items from Base44
+  if (completionRate === null || completionRate === undefined) return 0;
+  if (completionRate >= 1) return 15;    // all items complete
+  if (completionRate >= 0.75) return 12;  // 75%+ complete
+  if (completionRate >= 0.5) return 8;    // 50%+ complete
+  if (completionRate > 0) return 4;       // started but less than half
+  return 0;                               // nothing complete
 }
 
 function scoreTeamDevelopment(rating) {

@@ -22,6 +22,131 @@ const { getCustomFieldValue } = require('../utils/rolling-averages');
 const COACHING_DEPT_ID = process.env.COACHING_DEPT_LOCATION_ID;
 const REGISTRY_PATH = path.resolve(__dirname, '../setup/client-registry.json');
 
+// Default cancellation stage names to look for in client pipelines
+const CANCELLATION_STAGE_NAMES = ['cancelled', 'canceled', 'cancellation'];
+
+// Default cancellation stage to create if none found
+const DEFAULT_CANCELLATION_STAGE = { name: 'Cancelled Program' };
+
+/**
+ * Map pipeline stages for a client and ensure cancellation stage exists.
+ * Reads the client's GHL pipelines, maps closed/new_start/cancellation stages,
+ * and writes the pipeline_stage_map back to client-registry.json.
+ *
+ * If no cancellation stage is found, adds one to the client journey pipeline.
+ */
+async function mapPipelineStages(client, registry) {
+  const loc = client.ghl_location_id;
+
+  const pipelinesData = await ghl.getPipelines(loc);
+  const pipelines = pipelinesData.pipelines || [];
+
+  if (pipelines.length === 0) {
+    console.log(`    No pipelines found for ${client.name}`);
+    return;
+  }
+
+  // Find the two expected pipelines: lead pipeline and client journey pipeline
+  // Lead pipeline typically has: lead stages, booked, showed, closed
+  // Client journey pipeline typically has: signed up, program start, active, cancelled
+  let leadPipeline = pipelines.find(p =>
+    p.name.toLowerCase().includes('lead') || p.name.toLowerCase().includes('sales')
+  );
+  let journeyPipeline = pipelines.find(p =>
+    p.name.toLowerCase().includes('journey') || p.name.toLowerCase().includes('client') ||
+    p.name.toLowerCase().includes('90') || p.name.toLowerCase().includes('member')
+  );
+
+  // Fallback: if only one pipeline, use it for both
+  if (!leadPipeline && pipelines.length === 1) leadPipeline = pipelines[0];
+  if (!journeyPipeline && pipelines.length === 1) journeyPipeline = pipelines[0];
+  if (!leadPipeline && pipelines.length >= 2) leadPipeline = pipelines[0];
+  if (!journeyPipeline && pipelines.length >= 2) journeyPipeline = pipelines[1];
+
+  const stageMap = {
+    lead_pipeline_id: leadPipeline ? leadPipeline.id : '',
+    client_journey_pipeline_id: journeyPipeline ? journeyPipeline.id : '',
+    closed: [],
+    closed_stage_ids: [],
+    new_start: [],
+    new_start_stage_ids: [],
+    cancellation: [],
+    cancellation_stage_ids: [],
+  };
+
+  // Map stages from lead pipeline (closed = sale-related stages)
+  if (leadPipeline) {
+    for (const stage of leadPipeline.stages || []) {
+      const name = stage.name.toLowerCase();
+      if (name.includes('sale') || name.includes('closed') || name.includes('won') ||
+          name.includes('upsold') || name.includes('challenge')) {
+        stageMap.closed.push(stage.name);
+        stageMap.closed_stage_ids.push(stage.id);
+      }
+    }
+  }
+
+  // Map stages from client journey pipeline
+  if (journeyPipeline) {
+    for (const stage of journeyPipeline.stages || []) {
+      const name = stage.name.toLowerCase();
+
+      // New start stages
+      if (name.includes('signed up') || name.includes('program start') || name.includes('new start')) {
+        stageMap.new_start.push(stage.name);
+        stageMap.new_start_stage_ids.push(stage.id);
+      }
+
+      // Cancellation stages
+      if (name.includes('cancel')) {
+        stageMap.cancellation.push(stage.name);
+        stageMap.cancellation_stage_ids.push(stage.id);
+      }
+    }
+
+    // If no cancellation stage found, add one
+    if (stageMap.cancellation.length === 0) {
+      console.log(`    No cancellation stage found — adding "${DEFAULT_CANCELLATION_STAGE.name}" to ${journeyPipeline.name}`);
+
+      const existingStages = (journeyPipeline.stages || []).map(s => ({
+        id: s.id,
+        name: s.name,
+        position: s.position,
+      }));
+
+      const newPosition = existingStages.length;
+      const updatedStages = [
+        ...existingStages,
+        { name: DEFAULT_CANCELLATION_STAGE.name, position: newPosition },
+      ];
+
+      const updateResult = await ghl.updatePipeline(loc, journeyPipeline.id, {
+        name: journeyPipeline.name,
+        stages: updatedStages,
+      });
+
+      // Find the newly created stage in the response
+      const updatedPipelineStages = (updateResult.pipeline || updateResult).stages || [];
+      const newCancelStage = updatedPipelineStages.find(s => s.name === DEFAULT_CANCELLATION_STAGE.name);
+
+      if (newCancelStage) {
+        stageMap.cancellation.push(newCancelStage.name);
+        stageMap.cancellation_stage_ids.push(newCancelStage.id);
+        console.log(`    Cancellation stage created: ${newCancelStage.name} (${newCancelStage.id})`);
+      }
+    }
+  }
+
+  // Write pipeline_stage_map to client registry
+  const idx = registry.clients.findIndex(
+    c => c.ghl_location_id === client.ghl_location_id
+  );
+  if (idx !== -1) {
+    registry.clients[idx].pipeline_stage_map = stageMap;
+    fs.writeFileSync(REGISTRY_PATH, JSON.stringify(registry, null, 2) + '\n');
+  }
+}
+
 /**
  * Check if a client needs onboarding (no mirror contact ID).
  */
@@ -38,7 +163,7 @@ function needsOnboarding(client) {
  * Run onboarding for a single client.
  * Returns the new mirror contact ID, or null on failure.
  */
-async function onboardClient(client) {
+async function onboardClient(client, registry) {
   const loc = client.ghl_location_id;
   const contactId = client.ff_contact_id;
   const program = client.program || 'Freedom Formula';
@@ -175,6 +300,14 @@ async function onboardClient(client) {
     console.log(`    Warning: Could not set initial fields on mirror - ${err.message}`);
   }
 
+  // Step 6: Map pipeline stages and ensure cancellation stage exists
+  try {
+    await mapPipelineStages(client, registry);
+    console.log(`    Pipeline stage mapping configured`);
+  } catch (err) {
+    console.log(`    Warning: Pipeline stage mapping failed - ${err.message}`);
+  }
+
   // Log onboarding note
   try {
     const today = new Date().toISOString().split('T')[0];
@@ -217,7 +350,7 @@ async function onboardNewClients() {
   let registryUpdated = false;
 
   for (const client of toOnboard) {
-    const mirrorId = await onboardClient(client);
+    const mirrorId = await onboardClient(client, registry);
 
     if (mirrorId) {
       // Update the registry entry with the mirror contact ID

@@ -181,6 +181,10 @@ async function getPipelines(locationId) {
   return apiRequest('GET', '/opportunities/pipelines', locationId);
 }
 
+async function updatePipeline(locationId, pipelineId, pipelineData) {
+  return apiRequest('PUT', `/opportunities/pipelines/${pipelineId}`, locationId, pipelineData);
+}
+
 async function createOpportunity(locationId, opportunityData) {
   return apiRequest('POST', '/opportunities/', locationId, opportunityData);
 }
@@ -291,6 +295,7 @@ module.exports = {
   writeFieldsToContact,
   createPipeline,
   getPipelines,
+  updatePipeline,
   createOpportunity,
   updateOpportunity,
   getOpportunitiesByContact,

@@ -21,6 +21,7 @@ const mondayDelivery = require('./monday-delivery');
 const milestoneCheck = require('./milestone-check');
 const nightlyRefresh = require('./nightly-refresh');
 const scheduleSync = require('./schedule-sync');
+const dailyKpiSync = require('./daily-kpi-sync');
 const log = require('../utils/logger');
 
 // Start the API server alongside cron jobs (handles webhooks + form submissions)
@@ -34,6 +35,7 @@ log.info('Scheduler', '  Nightly Refresh: Mon-Sat at 11:00pm');
 log.info('Scheduler', '  Monday Delivery: Every Monday at 7:00am');
 log.info('Scheduler', '  Milestone Check: Every day at 8:00am');
 log.info('Scheduler', '  Schedule Sync:   Every day at 6:00am');
+log.info('Scheduler', '  Daily KPI Sync:  Every day at 6:30am');
 log.info('Scheduler', '  API Server:      Running on port ' + (process.env.PORT || process.env.FORM_PORT || 3000));
 
 // Scoring Engine -- Sunday 11:00pm
@@ -105,6 +107,16 @@ cron.schedule('0 6 * * *', async () => {
     await scheduleSync.run();
   } catch (err) {
     log.error('Scheduler', `Schedule sync crashed: ${err.message}`);
+  }
+}, { timezone: 'America/New_York' });
+
+// Daily KPI Sync -- Every day at 6:30am (pulls yesterday's data from GHL + ads → Base44)
+cron.schedule('30 6 * * *', async () => {
+  log.info('Scheduler', 'Daily KPI sync triggered');
+  try {
+    await dailyKpiSync.run();
+  } catch (err) {
+    log.error('Scheduler', `Daily KPI sync crashed: ${err.message}`);
   }
 }, { timezone: 'America/New_York' });
 

@@ -45,7 +45,10 @@ router.post('/', async (req, res) => {
         email,
         phone: phone || '',
         city: city || '',
-        tags: tags || ['Freedom Formula', 'Intake Complete'],
+        tags: tags || [
+          (customField && customField.ff_program === 'Black Circle') ? 'Black Circle' : 'Freedom Formula',
+          'Intake Complete',
+        ],
         source: 'Client Intake Form',
       });
       contactId = created.contact ? created.contact.id : created.id;

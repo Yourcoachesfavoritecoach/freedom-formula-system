@@ -36,8 +36,8 @@ function calculateScore(data) {
   // Metric 5: Weekly KPIs populated (10 pts)
   breakdown.weeklyKPIs = scoreWeeklyKPIs(data.kpiFields);
 
-  // Metric 6: Coaching directive implemented (10 pts)
-  breakdown.coachingDirective = scoreCoachingDirective(data.directiveStatus);
+  // Metric 6: Action item completion (10 pts)
+  breakdown.actionCompletion = scoreActionCompletion(data.actionCompletionRate);
 
   // Metric 7: Hours reclaimed (5 pts)
   breakdown.hoursReclaimed = scoreHoursReclaimed(data.hoursReclaimedThisWeek);
@@ -146,12 +146,14 @@ function scoreWeeklyKPIs(kpiFields) {
   return 0;
 }
 
-function scoreCoachingDirective(status) {
-  if (!status) return 0;
-  const s = status.toLowerCase();
-  if (s.startsWith('yes')) return 10;
-  if (s.startsWith('partial')) return 5;
-  return 0;
+function scoreActionCompletion(completionRate) {
+  // completionRate: 0-1 ratio of completed/total action items from Base44
+  if (completionRate === null || completionRate === undefined) return 0; // no actions assigned
+  if (completionRate >= 1) return 10;   // all items complete
+  if (completionRate >= 0.75) return 8;  // 75%+ complete
+  if (completionRate >= 0.5) return 5;   // 50%+ complete
+  if (completionRate > 0) return 2;      // started but less than half
+  return 0;                              // nothing complete
 }
 
 function scoreHoursReclaimed(hours) {

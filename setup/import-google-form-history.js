@@ -10,7 +10,7 @@ const CONTACT_MAP = {
 };
 
 const API_BASE = 'https://services.leadconnectorhq.com';
-const API_TOKEN = 'pit-8fcda97d-b8c9-4463-bd36-1553df77d257';
+const API_TOKEN = 'pit-f96eb0f9-019f-4882-963d-6ae83c0f8a47';
 const API_VERSION = '2021-07-28';
 
 function buildNote(row) {

@@ -195,8 +195,42 @@ async function scoreClient(client) {
   // ─── Pull Operational Data ───
 
   const operationalControlRating = readField('FF Operational Control Rating');
-  const directiveStatus = readField('FF Coaching Directive Status');
   const hoursReclaimedThisWeek = readField('FF Hours Reclaimed This Week');
+
+  // Pull action item completion from Base44 (replaces manual directive status)
+  let actionCompletionRate = null;
+  try {
+    const allActions = await base44.findEntity('ClientAction', { client_email: clientEmail });
+    // If filter returns empty (Base44 quirk), try fetching all and filtering client-side
+    let clientActions = allActions;
+    if (clientActions.length === 0 && clientEmail) {
+      const https = require('https');
+      const rawActions = await new Promise((resolve, reject) => {
+        const req = https.request(
+          `https://app.base44.com/api/apps/${process.env.BASE44_APP_ID}/entities/ClientAction`,
+          { headers: { 'api_key': process.env.BASE44_API_KEY } },
+          (res) => {
+            let d = '';
+            res.on('data', c => d += c);
+            res.on('end', () => {
+              try { resolve(JSON.parse(d)); } catch { resolve([]); }
+            });
+          }
+        );
+        req.on('error', reject);
+        req.end();
+      });
+      const arr = Array.isArray(rawActions) ? rawActions : rawActions.results || [];
+      clientActions = arr.filter(a => a.client_email === clientEmail);
+    }
+    if (clientActions.length > 0) {
+      const completed = clientActions.filter(a => a.status === 'completed' || a.completed === true).length;
+      actionCompletionRate = completed / clientActions.length;
+      console.log(`  Action items: ${completed}/${clientActions.length} complete (${Math.round(actionCompletionRate * 100)}%)`);
+    }
+  } catch (err) {
+    console.log(`  Warning: Could not fetch action items from Base44: ${err.message}`);
+  }
   const hoursRunningTotal = parseFloat(readField('FF Hours Reclaimed Running Total') || 0);
 
   // Update hours running total
@@ -328,7 +362,7 @@ async function scoreClient(client) {
     outreachSentThisWeek,
     operationalControlRating: parseFloat(operationalControlRating || 0),
     kpiFields,
-    directiveStatus,
+    actionCompletionRate,
     hoursReclaimedThisWeek: parseFloat(hoursReclaimedThisWeek || 0),
     weeklyRevenue,
     revenue4WeekAvg: averages.revenue4WeekAvg || parseFloat(readField('FF Revenue 4-Week Avg') || 0),
@@ -539,9 +573,42 @@ async function scoreBCClient(client) {
 
   // ─── Pull Leadership Data ───
 
-  const initiativeStatus = readField('BC Strategic Initiative Status');
   const teamDevelopmentRating = readField('BC Team Development Rating');
   const ceoHoursThisWeek = readField('BC CEO Hours This Week');
+
+  // Pull action item completion from Base44 (replaces manual initiative status)
+  let actionCompletionRate = null;
+  try {
+    const allActions = await base44.findEntity('ClientAction', { client_email: clientEmail });
+    let clientActions = allActions;
+    if (clientActions.length === 0 && clientEmail) {
+      const https = require('https');
+      const rawActions = await new Promise((resolve, reject) => {
+        const req = https.request(
+          `https://app.base44.com/api/apps/${process.env.BASE44_APP_ID}/entities/ClientAction`,
+          { headers: { 'api_key': process.env.BASE44_API_KEY } },
+          (res) => {
+            let d = '';
+            res.on('data', c => d += c);
+            res.on('end', () => {
+              try { resolve(JSON.parse(d)); } catch { resolve([]); }
+            });
+          }
+        );
+        req.on('error', reject);
+        req.end();
+      });
+      const arr = Array.isArray(rawActions) ? rawActions : rawActions.results || [];
+      clientActions = arr.filter(a => a.client_email === clientEmail);
+    }
+    if (clientActions.length > 0) {
+      const completed = clientActions.filter(a => a.status === 'completed' || a.completed === true).length;
+      actionCompletionRate = completed / clientActions.length;
+      console.log(`  Action items: ${completed}/${clientActions.length} complete (${Math.round(actionCompletionRate * 100)}%)`);
+    }
+  } catch (err) {
+    console.log(`  Warning: Could not fetch action items from Base44: ${err.message}`);
+  }
 
   // ─── Pull Financial Data ───
 
@@ -645,7 +712,7 @@ async function scoreBCClient(client) {
     scoringWindowEnd: week.end.toISOString(),
     appointmentDisposition,
     peerContributionResponse,
-    initiativeStatus,
+    actionCompletionRate,
     teamDevelopmentRating: parseFloat(teamDevelopmentRating || 0),
     ceoHoursThisWeek: parseFloat(ceoHoursThisWeek || 0),
     weeklyRevenue,

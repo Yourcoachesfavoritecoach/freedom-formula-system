@@ -24,6 +24,7 @@ const { onboardNewClients } = require('../engine/onboard-client');
 const clickup = require('../utils/clickup-api');
 const dashboardRoutes = require('./dashboard-routes');
 const intakeRoutes = require('./intake-routes');
+const postCallRoutes = require('./post-call-routes');
 const log = require('../utils/logger');
 const runLock = require('../utils/run-lock');
 
@@ -250,6 +251,17 @@ app.use('/api/dashboard', dashboardRoutes);
 
 // ─── Client Intake API ───
 app.use('/api/intake', intakeRoutes);
+
+// ─── Post-Call Breakdown Webhook (from Cowork) ───
+// Auth: same DASHBOARD_TOKEN as dashboard routes
+app.use('/api/webhook/post-call', (req, res, next) => {
+  const token = process.env.DASHBOARD_TOKEN;
+  if (!token) return res.status(500).json({ error: 'DASHBOARD_TOKEN not configured.' });
+  const authHeader = req.headers.authorization || '';
+  const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+  if (bearerToken !== token) return res.status(401).json({ error: 'Unauthorized.' });
+  next();
+}, postCallRoutes);
 
 // ─── Health check (extended) ───
 app.get('/api/health', (req, res) => {

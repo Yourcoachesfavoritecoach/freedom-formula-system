@@ -4,7 +4,7 @@
  *
  * Deploy to Cloudflare Workers (free tier).
  * Set these environment variables in Cloudflare dashboard:
- *   GHL_API_KEY = pit-8fcda97d-b8c9-4463-bd36-1553df77d257
+ *   GHL_API_KEY = pit-f96eb0f9-019f-4882-963d-6ae83c0f8a47
  *   COACHING_DEPT_LOCATION_ID = FeySgmJup9wqIQhhJomk
  */
 

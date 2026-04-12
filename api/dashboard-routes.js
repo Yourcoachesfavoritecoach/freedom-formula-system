@@ -586,7 +586,7 @@ router.get('/actions/:clientName', (req, res) => {
  * Body: { coachName, action, type, assignedTo?, assignmentReason? }
  * type: "note" | "assignment" | "follow-up"
  */
-router.post('/actions/:clientName', (req, res) => {
+router.post('/actions/:clientName', async (req, res) => {
   try {
     const clientName = decodeURIComponent(req.params.clientName);
     const { coachName, action, type, assignedTo, assignmentReason } = req.body;
@@ -615,15 +615,28 @@ router.post('/actions/:clientName', (req, res) => {
     saveActions(actions);
 
     // Push to Base44 (non-blocking)
+    // Look up client email from registry for app filtering
+    const safeClients = getSafeClientList();
+    const matchedClient = safeClients.find(c => c.name === clientName);
+    let clientEmail = '';
+    if (matchedClient && matchedClient.ff_contact_id) {
+      try {
+        const contactRes = await ghl.getContact(matchedClient.ghl_location_id, matchedClient.ff_contact_id);
+        const contact = contactRes.contact || contactRes;
+        clientEmail = contact.email || '';
+      } catch (_) {}
+    }
+
     base44.pushClientAction(entry.id, {
+      client_email: clientEmail,
       client_name: clientName,
       coach_name: coachName,
       action_text: action,
       action_type: type,
+      status: 'pending',
       assigned_to: assignedTo || '',
       assignment_reason: assignmentReason || '',
       created_at: entry.timestamp,
-      completed: false,
     }).catch(() => {});
 
     res.json({ success: true, entry });
@@ -664,10 +677,10 @@ router.put('/actions/:actionId', (req, res) => {
       coach_name: a.coachName,
       action_text: a.action,
       action_type: a.type,
+      status: a.completed ? 'completed' : 'pending',
       assigned_to: a.assignedTo || '',
       assignment_reason: a.assignmentReason || '',
       created_at: a.timestamp,
-      completed: a.completed || false,
       updated_at: a.updatedAt,
     }).catch(() => {});
 
